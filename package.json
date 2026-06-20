@@ -1,0 +1,21 @@
+{
+  "name": "pi-task-master",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Autonomous task orchestration over the pi agent SDK — model-agnostic, PR-based.",
+  "bin": {
+    "pitm": "bin/pitm.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "pitm": "bun run bin/pitm.js",
+    "doctor": "bun run bin/pitm.js doctor"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.79.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
