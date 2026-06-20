@@ -8,17 +8,64 @@ Inspired by [`developerz-ai/claude-task-master`](https://github.com/developerz-a
 
 ## Install
 
-Requires Bun, `pi` (authenticated), `gh` (logged in), and `git`.
+### Prerequisites
+
+- **[Bun](https://bun.sh)** 1.3+ (runtime)
+- **[pi](https://github.com/earendil-works/pi-coding-agent)** — the agent harness, authenticated with at least one model provider. Run `pi` once interactively and log in, or set provider API keys in `~/.pi/agent/auth.json`.
+- **[GitHub CLI](https://cli.github.com)** (`gh`) — logged in via `gh auth login`.
+- **git** — with push access to the repo you want the agent to work on.
+
+### Get the code
 
 ```bash
-cd pi-task-master
-bun install
-bun link   # makes `pitm` available on PATH
+git clone https://github.com/HustleCoding/pitm.git
+cd pitm
+bun install        # installs the pi SDK + types
+bun link           # makes `pitm` available on your PATH
 ```
 
-## Configure
+Verify it can run:
 
-Drop a `.pitm/config.json` in the **target repo** (the repo you want the agent to work on). See [`.pitm/config.example.json`](./.pitm/config.example.json). Model refs are `"provider/modelId"` and must resolve via `pi` (check `pi`'s model list / `~/.pi/agent/models.json`).
+```bash
+pitm --help
+pitm doctor        # checks pi auth, gh, git, config, and model availability
+```
+
+`doctor` must pass before you run anything real. If it fails, it tells you exactly what's missing (e.g. `gh auth status` not logged in, a routed model not found).
+
+### Where `pitm` reads auth from
+
+`pitm` does **not** store API keys. It reuses your existing pi credentials at `~/.pi/agent/auth.json` and the models declared in `~/.pi/agent/models.json` / `~/.pi/agent/settings.json`. So you must have `pi` set up and working on that machine first.
+
+## Configure (in the repo you want it to work on)
+
+`pitm` is a tool you run **from inside a target repo** (the codebase you want changed). It does not modify itself. From that target repo:
+
+```bash
+mkdir -p .pitm
+cat > .pitm/config.json <<'EOF'
+{
+  "models": {
+    "planner":  "opencode-go/glm-5.2",
+    "worker":   "opencode-go/glm-5.2",
+    "fixer":    "openai-codex/gpt-5.4",
+    "reviewer": "opencode-go/glm-5.2",
+    "verifier": "opencode-go/glm-5.2"
+  },
+  "verifyCommand": "bun run verify",
+  "git": { "targetBranch": "main", "autoPush": true, "autoMerge": false },
+  "budget": { "maxTokensPerRun": 2000000, "maxCiFixRetries": 3 }
+}
+EOF
+echo ".pitm/" >> .gitignore    # keep run state out of git
+```
+
+Full schema in [`.pitm/config.example.json`](./.pitm/config.example.json). The two fields you must set per repo:
+
+- **`verifyCommand`** — the command that proves the work is correct (`bun run verify`, `npm test`, `cargo test`, …). The worker runs it after implementing each task; the verifier runs it again before declaring done.
+- **`git.targetBranch`** — the branch PRs target (usually `main` or `master`).
+
+Model refs are `"provider/modelId"` and must resolve via pi. Check what's available with `pitm doctor`, or look at `pi`'s model list. Pick API-key-authenticated providers; OAuth-only credentials can be rejected by some orgs.
 
 ## Use
 
@@ -26,7 +73,8 @@ From inside the target repo:
 
 ```bash
 pitm doctor                 # check pi auth, gh, git, config, model availability
-pitm start "Add a /healthz route to apps/api with a test"
+pitm start "Add a /healthz route to apps/api with a test" --dry-plan   # preview the plan, no side effects
+pitm start "Add a /healthz route to apps/api with a test"              # real run: plan → work → PR → CI → review → verify
 pitm status                 # phase, tasks, PR url, token budget
 pitm resume                 # continue after a SIGINT or a failed run
 pitm steer "also cover the 503 case"   # queue a steering message for the running worker
@@ -50,6 +98,46 @@ planning → working (per task) → pr_open → ci_pending → ci_fixing → rev
 - **Merge** — only if `git.autoMerge` is `true`; squashes by default.
 
 At any failing gate the run halts at `needs_human` with an actionable note; `pitm resume` continues once you've fixed the blocker.
+
+## First run (5 minutes)
+
+```bash
+# 1. one-time: install pitm
+git clone https://github.com/HustleCoding/pitm.git && cd pitm && bun install && bun link
+
+# 2. go to the repo you want changed
+cd path/to/your-project
+mkdir -p .pitm
+# edit .pitm/config.json — set verifyCommand + git.targetBranch for THIS repo
+# (see the Configure section above)
+echo ".pitm/" >> .gitignore
+
+# 3. sanity check
+pitm doctor
+
+# 4. preview what it would do — no branch, no PR, no tokens spent on execution
+pitm start "Add a /healthz route that returns 200 OK with a test" --dry-plan
+
+# 5. happy with the plan? run it for real
+pitm start "Add a /healthz route that returns 200 OK with a test"
+
+# 6. watch progress / resume after interruption
+pitm status
+pitm resume
+```
+
+What you'll see on a real run: a new `pitm/<date>-<slug>` branch, one commit per planned task, a push, a PR opened via `gh`, then CI polling → (fix attempts if CI fails) → review-comment handling → a verifier verdict. If anything fails past the PR, the run stops at `needs_human` and `pitm resume` picks it back up.
+
+## When a run gets stuck
+
+- **`needs_human`** — read `pitm status` → `Note:`. Fix the blocker (bad model auth, a test it can't pass, an environmental CI failure), then `pitm resume`.
+- **You Ctrl-C'd mid-run** — state is saved; `pitm resume` continues from the saved phase.
+- **You want to start over** — `rm .pitm/state.json` and run `pitm start` again.
+- **Wrong repo / wrong goal** — delete `.pitm/state.json`, delete the stray `pitm/...` branch (`git branch -D pitm/...`), and start fresh.
+
+## Costs
+
+Every `pitm start` spends real tokens: a planner call plus one worker session per task (plus fixer/reviewer/verifier sessions if it reaches those phases). The `budget.maxTokensPerRun` cap (default 2,000,000) hard-stops runaway runs at `needs_human`. Use `--dry-plan` first to scope the work before spending on execution.
 
 ## Safety
 
