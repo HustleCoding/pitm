@@ -20,6 +20,7 @@ import {
 	branchFromGoal,
 	commit,
 	createBranch,
+	detectDefaultBranch,
 	ghPrCreate,
 	ghPrMerge,
 	pushBranch,
@@ -76,13 +77,19 @@ export async function startRun(opts: StartOptions): Promise<State> {
 	const lock = await acquireLock(cwd);
 
 	const branch = branchFromGoal(opts.goal);
+	const defaultBranch = await detectDefaultBranch(cwd, config.git.targetBranch);
+	if (defaultBranch !== config.git.targetBranch) {
+		console.error(
+			`Note: config git.targetBranch="${config.git.targetBranch}" but the repo default is "${defaultBranch}". Using "${defaultBranch}" as the PR base.`,
+		);
+	}
 	const state: State = {
 		goal: opts.goal,
 		phase: "planning",
 		createdAt: new Date().toISOString(),
 		updatedAt: new Date().toISOString(),
 		branch,
-		baseBranch: config.git.targetBranch,
+		baseBranch: defaultBranch,
 		verifyCommand: config.verifyCommand,
 		tasks: [],
 		modelByPhase: serializeModelRefs(byPhase),

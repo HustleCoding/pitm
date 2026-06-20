@@ -85,6 +85,23 @@ export async function ghPrCreate(
 	return { number, url: url.trim() };
 }
 
+/** Detect the repo's default branch. Tries origin/HEAD, then `gh repo view`,
+ * then falls back to the provided config value. Never throws. */
+export async function detectDefaultBranch(cwd: string, fallback = "main"): Promise<string> {
+	// 1. origin/HEAD symbolic ref — works for any clone with a remote.
+	try {
+		const out = await gitOk(["symbolic-ref", "refs/remotes/origin/HEAD"], cwd);
+		const m = out.match(/refs\/remotes\/origin\/(.+)$/);
+		if (m?.[1]) return m[1].trim();
+	} catch { /* fall through */ }
+	// 2. gh repo view — authoritative for GitHub repos.
+	try {
+		const r = await run("gh", ["repo", "view", "--json", "defaultBranchRef", "-q", ".defaultBranchRef.name"], cwd);
+		if (r.exitCode === 0 && r.stdout.trim()) return r.stdout.trim();
+	} catch { /* fall through */ }
+	return fallback;
+}
+
 /** Push the current branch (already tracked) to origin. */
 export async function pushBranch(cwd: string): Promise<void> {
 	await gitOk(["push"], cwd);
@@ -225,6 +242,10 @@ export async function ghCheckLog(check: PrCheck, cwd: string): Promise<string> {
 	const r = await run("gh", ["api", check.link, "-q", ".output.text // .output // empty"], cwd);
 	if (r.exitCode !== 0) return `(could not fetch log from ${check.link})`;
 	return (r.stdout || "(empty log)").slice(0, 12000);
+}
+
+export async function deleteBranch(branch: string, cwd: string): Promise<void> {
+	await gitOk(["branch", "-D", branch], cwd);
 }
 
 /** Slugify a goal into a git branch name: "Add X" -> "pitm/add-x". */
