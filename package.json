@@ -8,6 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "verify": "bun run typecheck",
     "pitm": "bun run bin/pitm.js",
     "doctor": "bun run bin/pitm.js doctor"
   },
