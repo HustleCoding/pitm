@@ -37,6 +37,7 @@ export async function runWorker(input: WorkerInput): Promise<PhaseRunResult> {
 		tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
 		prompt,
 		onSession: input.onSession,
+		phaseLabel: `worker ${input.task.id}`,
 	});
 }
 

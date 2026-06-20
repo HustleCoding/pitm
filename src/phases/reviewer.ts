@@ -51,5 +51,6 @@ Address them, then run \`${input.verifyCommand}\` locally. Working directory: ${
 		systemPrompt: SYSTEM_PROMPT,
 		tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
 		prompt,
+		phaseLabel: "addressing review",
 	});
 }

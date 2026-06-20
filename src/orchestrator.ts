@@ -36,6 +36,7 @@ import { runVerifier } from "./phases/verifier.ts";
 import { runReviewLoop } from "./reviews.ts";
 import { mergeExternalMailbox, startMailboxPoller } from "./mailbox.ts";
 import { acquireLock, type HeldLock } from "./lock.ts";
+import { finish as finishProgress, phaseBegin, phaseEnd, status } from "./progress.ts";
 import {
 	budgetExhausted,
 	loadState,
@@ -204,6 +205,7 @@ async function workLoop(state: State, ctx: RunContext): Promise<void> {
 		next.attempts += 1;
 		state.currentTaskId = next.id;
 		log(state, "working", `Starting ${next.id}: ${next.title}`, modelLabel(workerModel));
+		phaseBegin(`working ${next.id}`, modelLabel(workerModel));
 		saveState(state, cwd);
 
 		try {

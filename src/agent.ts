@@ -21,6 +21,7 @@ import {
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { modelLabel } from "./models.ts";
+import { phaseEnd, startSpinner, status, stopSpinner, textStreaming, toolCall, toolEnd } from "./progress.ts";
 
 /** Minimal slice of AgentSession the orchestrator needs for mailbox steering. */
 export interface AgentSessionLike {
@@ -42,6 +43,8 @@ export interface PhaseRunOptions {
 	signal?: AbortSignal;
 	/** Called once with the live AgentSession, so callers can attach a mailbox poller. */
 	onSession?: (session: AgentSessionLike) => void;
+	/** Human-readable label for the phase, shown in progress output. */
+	phaseLabel?: string;
 }
 
 export interface PhaseRunResult {
@@ -94,23 +97,41 @@ export async function runPhase(opts: PhaseRunOptions): Promise<PhaseRunResult> {
 
 	let text = "";
 	let totalTokens = 0;
+	let streamedAnyText = false;
+	const label = opts.phaseLabel ?? "agent";
 
 	const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
-		if (
-			event.type === "message_update" &&
-			event.assistantMessageEvent.type === "text_delta"
-		) {
-			text += event.assistantMessageEvent.delta;
+		switch (event.type) {
+			case "tool_execution_start":
+				toolCall(event.toolName, event.args);
+				break;
+			case "tool_execution_end":
+				toolEnd(event.toolName, event.isError);
+				startSpinner("thinking…");
+				break;
+			case "message_update":
+				if (event.assistantMessageEvent.type === "text_delta") {
+					if (!streamedAnyText) {
+						textStreaming();
+						streamedAnyText = true;
+					}
+					text += event.assistantMessageEvent.delta;
+				}
+				break;
+			default:
+				break;
 		}
 	});
 
 	try {
+		startSpinner("thinking…");
 		await session.prompt(opts.prompt);
 		// Deliver any mid-run steering messages, then wait for the agent to drain.
 		for (const steer of opts.steerMidRun ?? []) {
 			await session.steer(steer);
 		}
 		await session.agent.waitForIdle();
+		stopSpinner();
 
 		// Sum usage from all assistant messages for budget accounting.
 		for (const msg of session.messages) {
@@ -137,6 +158,7 @@ export async function runPhase(opts: PhaseRunOptions): Promise<PhaseRunResult> {
 				.join("\n");
 			throw new Error(`Agent produced no text output. Message trace:\n${diag}`);
 		}
+		phaseEnd(label, `${session.messages.filter((m) => m.role === "assistant").length} assistant msg(s)`, totalTokens);
 		return {
 			text: finalText,
 			totalTokens,
@@ -144,6 +166,7 @@ export async function runPhase(opts: PhaseRunOptions): Promise<PhaseRunResult> {
 			messages: session.messages,
 		};
 	} finally {
+		stopSpinner();
 		unsubscribe();
 		session.dispose();
 	}

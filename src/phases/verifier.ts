@@ -63,6 +63,7 @@ Working directory: ${input.cwd}`;
 		systemPrompt: SYSTEM_PROMPT,
 		tools: ["read", "bash", "grep", "find", "ls"],
 		prompt,
+		phaseLabel: "verifying",
 	});
 	return parseVerdict(result.text);
 }

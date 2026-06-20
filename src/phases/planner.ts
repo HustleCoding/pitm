@@ -46,6 +46,7 @@ export async function runPlanner(
 		systemPrompt: SYSTEM_PROMPT,
 		tools: ["read", "grep", "find", "ls"],
 		prompt,
+		phaseLabel: "planning",
 	});
 	return parsePlannerOutput(result.text);
 }

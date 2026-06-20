@@ -57,6 +57,7 @@ Investigate, fix, and re-run \`${input.verifyCommand}\` locally. Working directo
 		systemPrompt: SYSTEM_PROMPT,
 		tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
 		prompt,
+		phaseLabel: "fixing CI",
 	});
 }
 

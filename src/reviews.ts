@@ -8,6 +8,7 @@ import { commit, stageAll } from "./git.ts";
 import { runReviewer } from "./phases/reviewer.ts";
 import { log, saveState, type State } from "./state.ts";
 import { modelLabel } from "./models.ts";
+import { status } from "./progress.ts";
 
 export interface ReviewLoopOptions {
 	cwd: string;
@@ -39,6 +40,7 @@ export async function runReviewLoop(opts: ReviewLoopOptions): Promise<ReviewOutc
 		const newComments = comments.filter((c) => c.body && !known.has(c.body));
 		if (newComments.length === 0) {
 			log(state, "review", `No new review comments (round ${round}). Review loop clean.`);
+			status(`review round ${round}: no new comments — clean`);
 			saveState(state, cwd);
 			return "clean";
 		}
@@ -47,6 +49,7 @@ export async function runReviewLoop(opts: ReviewLoopOptions): Promise<ReviewOutc
 			return needsHuman(state, cwd, "No reviewer model resolved but review comments are pending.");
 		}
 		log(state, "review", `Round ${round}: ${newComments.length} new comment(s) with ${modelLabel(opts.reviewerModel)}`, modelLabel(opts.reviewerModel));
+		status(`review round ${round}: ${newComments.length} new comment(s)`);
 		saveState(state, cwd);
 
 		let result;

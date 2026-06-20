@@ -14,6 +14,7 @@ import { commit, stageAll } from "./git.ts";
 import { runFixer, isEnvironmental } from "./phases/fixer.ts";
 import { log, saveState, type State } from "./state.ts";
 import { modelLabel } from "./models.ts";
+import { phaseEnd, startSpinner, status, stopSpinner } from "./progress.ts";
 
 export interface CiLoopOptions {
 	cwd: string;
@@ -35,8 +36,12 @@ export async function runCiLoop(opts: CiLoopOptions): Promise<CiOutcome> {
 	const timeoutMs = opts.timeoutMs ?? 30 * 60_000;
 
 	// 1. Wait for the initial CI run to settle.
+	status("waiting for CI checks…");
+	startSpinner("polling CI…");
 	let summary = await waitForChecks(state.pr.number, cwd, pollMs, timeoutMs);
+	stopSpinner();
 	log(state, "ci_pending", `Initial CI: ${summary.overall} (${summary.checks.length} checks).`);
+	phaseEnd("CI", summary.overall);
 	saveState(state, cwd);
 
 	if (summary.overall === "success") return "success";
@@ -50,6 +55,7 @@ export async function runCiLoop(opts: CiLoopOptions): Promise<CiOutcome> {
 		}
 		const failing = summary.checks.filter((c) => c.state === "failure");
 		log(state, "ci_fixing", `Fix attempt ${attempt}/${opts.maxFixRetries} on ${failing.length} failing check(s) with ${modelLabel(opts.fixerModel)}`, modelLabel(opts.fixerModel));
+		status(`fix attempt ${attempt}/${opts.maxFixRetries}: ${failing.length} failing check(s)`);
 		saveState(state, cwd);
 
 		const logs = await Promise.all(
