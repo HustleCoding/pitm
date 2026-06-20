@@ -1,16 +1,19 @@
 /**
  * CLI entrypoint. Small hand-rolled subcommand dispatcher (no extra dep).
  *
- *   pitm start "<goal>"
- *   pitm resume
- *   pitm status
- *   pitm doctor
- *   pitm steer "<message>"
+ *   pitm start "<goal>"       plan -> work -> PR -> CI -> review -> verify -> (merge)
+ *   pitm resume               resume the current run from its saved phase
+ *   pitm status               show the current run's phase, tasks, and PR
+ *   pitm doctor               check pi auth, gh, git, config, and models
+ *   pitm steer "<message>"    append a steering message to the mailbox
+ *   pitm watch [--port N]     start the HTTP mailbox endpoint for external injects
  */
 import { startRun, resumeRun } from "./orchestrator.ts";
 import { runDoctor } from "./doctor.ts";
 import { requireState, saveState } from "./state.ts";
 import { isPitmError } from "./errors.ts";
+import { appendSteer, mergeExternalMailbox } from "./mailbox.ts";
+import { startMailboxServer } from "./mailbox-server.ts";
 import { MAILBOX_PATH } from "./config.ts";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,11 +23,12 @@ function usage(): never {
 	console.log(`pi-task-master — autonomous task orchestration over the pi SDK
 
 Usage:
-  pitm start "<goal>"        Plan, implement, and open a PR for the goal.
+  pitm start "<goal>"        Plan, implement, open PR, run CI/review/verify, (merge).
   pitm resume                Resume the current run from its saved phase.
   pitm status                Show the current run's phase, tasks, and PR.
   pitm doctor                Check pi auth, gh, git, config, and models.
   pitm steer "<message>"     Append a steering message to the mailbox.
+  pitm watch [--port N]      Start the HTTP mailbox endpoint (default :7331).
 
 State lives in .pitm/state.json (one run per repo).`);
 	process.exit(2);
@@ -50,8 +54,12 @@ async function main(argv: string[]): Promise<void> {
 			return;
 		}
 		case "status": {
-			const state = requireState();
-			printSummary(state);
+			try {
+				printSummary(requireState());
+			} catch (e) {
+				console.log(`No active pi-task-master run in this repo. Start one with: pitm start "<goal>"`);
+				process.exit(0);
+			}
 			return;
 		}
 		case "doctor": {
@@ -61,8 +69,33 @@ async function main(argv: string[]): Promise<void> {
 		case "steer": {
 			const text = rest.join(" ").trim();
 			if (!text) usage();
-			appendSteer(text);
-			console.log("Steering message queued. It will be delivered to the next worker turn.");
+			let state;
+			try {
+				state = requireState();
+			} catch {
+				console.error("No active run to steer. Start one first: pitm start \"<goal>\"");
+				process.exit(1);
+			}
+			appendSteer(state, text);
+			saveState(state);
+			appendToMailboxFile(text);
+			console.log("Steering message queued. It will be delivered to the running session.");
+			return;
+		}
+		case "watch": {
+			const port = parsePortFlag(rest);
+			const srv = await startMailboxServer({ port });
+			console.log(`pi-task-master mailbox server on http://${"127.0.0.1"}:${srv.port}`);
+			console.log("  POST /steer      {\"text\":\"...\"}");
+			console.log("  POST /followup   {\"text\":\"...\"}");
+			console.log("  GET  /state      current run state");
+			console.log("  GET  /healthz");
+			console.log("Ctrl+C to stop.");
+			const stop = () => {
+				srv.close().then(() => process.exit(0));
+			};
+			process.on("SIGINT", stop);
+			process.on("SIGTERM", stop);
 			return;
 		}
 		case "--help":
@@ -73,6 +106,16 @@ async function main(argv: string[]): Promise<void> {
 			console.error(`Unknown command: ${cmd}`);
 			usage();
 	}
+}
+
+function parsePortFlag(rest: string[]): number | undefined {
+	const i = rest.findIndex((a) => a === "--port");
+	if (i >= 0 && rest[i + 1]) return Number(rest[i + 1]);
+	for (const a of rest) {
+		const m = a.match(/^--port=(\d+)$/);
+		if (m) return Number(m[1]);
+	}
+	return undefined;
 }
 
 function printSummary(state: ReturnType<typeof requireState>): void {
@@ -88,18 +131,11 @@ function printSummary(state: ReturnType<typeof requireState>): void {
 	}
 	const spent = (state.budget.spentTokens / 1000).toFixed(1);
 	console.log(`Budget: ${spent}k / ${state.budget.maxTokensPerRun / 1000}k tokens`);
+	const pending = state.mailbox.filter((m) => !m.deliveredAt).length;
+	if (pending > 0) console.log(`Mailbox: ${pending} undelivered`);
 }
 
-function appendSteer(text: string): void {
-	const state = requireState();
-	state.mailbox.push({
-		id: randomUUID(),
-		text,
-		kind: "steer",
-		createdAt: new Date().toISOString(),
-	});
-	saveState(state);
-	// Also write a standalone mailbox file so an external process can append.
+function appendToMailboxFile(text: string): void {
 	const dir = ".pitm";
 	mkdirSync(dir, { recursive: true });
 	const path = join(process.cwd(), MAILBOX_PATH);
@@ -112,18 +148,27 @@ function appendSteer(text: string): void {
 async function withSigint(fn: () => Promise<void>): Promise<void> {
 	const handler = () => {
 		console.error("\nSIGINT: saving state and exiting. Run `pitm resume` to continue.");
-		const s = requireState();
-		saveState(s);
+		try {
+			const s = requireState();
+			mergeExternalMailbox(s);
+			saveState(s);
+		} catch (e) {
+			console.error(`Could not save state on SIGINT: ${(e as Error).message}`);
+		}
 		process.exit(130);
 	};
 	process.on("SIGINT", handler);
 	try {
 		await fn();
 	} catch (e) {
-		const s = requireState();
-		s.phase = "needs_human";
-		s.humanNote = (e as Error).message;
-		saveState(s);
+		try {
+			const s = requireState();
+			s.phase = "needs_human";
+			s.humanNote = (e as Error).message;
+			saveState(s);
+		} catch {
+			/* no state to save */
+		}
 		console.error(`\nRun halted: ${(e as Error).message}`);
 		if (!isPitmError(e)) console.error((e as Error).stack);
 		process.exit(1);

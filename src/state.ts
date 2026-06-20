@@ -56,6 +56,7 @@ export interface State {
 	updatedAt: string;
 	branch: string;
 	baseBranch: string;
+	verifyCommand: string;
 	tasks: Task[];
 	currentTaskId?: string;
 	modelByPhase: Record<string, string>;

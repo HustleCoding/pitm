@@ -15,7 +15,8 @@
     "@earendil-works/pi-coding-agent": "0.79.8"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "typescript": "^5.6.0"
   }
 }

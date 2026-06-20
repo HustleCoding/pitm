@@ -22,6 +22,14 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { modelLabel } from "./models.ts";
 
+/** Minimal slice of AgentSession the orchestrator needs for mailbox steering. */
+export interface AgentSessionLike {
+	steer(text: string): Promise<void>;
+	followUp(text: string): Promise<void>;
+	agent: { waitForIdle(): Promise<void> };
+	dispose(): void;
+}
+
 export interface PhaseRunOptions {
 	cwd: string;
 	model: Model<Api>;
@@ -32,6 +40,8 @@ export interface PhaseRunOptions {
 	steerMidRun?: string[];
 	/** Abort signal — if aborted, we stop waiting (best-effort). */
 	signal?: AbortSignal;
+	/** Called once with the live AgentSession, so callers can attach a mailbox poller. */
+	onSession?: (session: AgentSessionLike) => void;
 }
 
 export interface PhaseRunResult {
@@ -79,6 +89,8 @@ export async function runPhase(opts: PhaseRunOptions): Promise<PhaseRunResult> {
 		sessionManager: SessionManager.inMemory(opts.cwd),
 		settingsManager,
 	});
+
+	if (opts.onSession) opts.onSession(session as unknown as AgentSessionLike);
 
 	let text = "";
 	let totalTokens = 0;
