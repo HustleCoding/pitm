@@ -99,6 +99,14 @@ planning → working (per task) → pr_open → ci_pending → ci_fixing → rev
 
 At any failing gate the run halts at `needs_human` with an actionable note; `pitm resume` continues once you've fixed the blocker.
 
+## Verify
+
+The project's verify command is `bun run typecheck` (it runs `tsc --noEmit` via the `typecheck` package.json script). Workers and contributors **must** make this command pass before considering work done.
+
+```bash
+bun run typecheck
+```
+
 ## First run (5 minutes)
 
 ```bash
