@@ -26,6 +26,8 @@ import {
 	pushBranch,
 	pushUpstream,
 	stageAll,
+	stagePaths,
+	stageTracked,
 } from "./git.ts";
 import { buildRegistry, modelLabel, resolveAll } from "./models.ts";
 import { type AgentSessionLike, type PhaseRunResult } from "./agent.ts";
@@ -218,7 +220,7 @@ async function workLoop(state: State, ctx: RunContext): Promise<void> {
 				result.model,
 			);
 			next.status = "done";
-			await stageAll(cwd);
+			await stageTaskChanges(cwd, result.touchedPaths);
 			const sha = await commit(`${next.id}: ${next.title}\n\n${state.goal}`, cwd);
 			next.commitSha = sha;
 			saveState(state, cwd);
@@ -398,6 +400,18 @@ async function afterPr(state: State, ctx: RunContext): Promise<void> {
 	log(state, "done", `Run complete. PR: ${state.pr.url}`);
 	saveState(state, cwd);
 	await lock.release();
+}
+
+/** Stage exactly the files the worker touched. Falls back to `git add -u`
+ * (tracked modifications only) when we couldn't capture paths (e.g. the agent
+ * used bash to create files). Never `git add -A`, so unrelated uncommitted
+ * changes in the working tree are never swept into a task commit. */
+async function stageTaskChanges(cwd: string, touchedPaths: string[]): Promise<void> {
+	if (touchedPaths.length > 0) {
+		await stagePaths(touchedPaths, cwd);
+		return;
+	}
+	await stageTracked(cwd);
 }
 
 function nextPendingTask(state: State): Task | undefined {

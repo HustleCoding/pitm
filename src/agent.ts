@@ -52,6 +52,9 @@ export interface PhaseRunResult {
 	totalTokens: number;
 	model: string;
 	messages: AgentMessage[];
+	/** File paths the agent modified via edit/write tools. Used to commit only
+	 *  what the agent touched, never `git add -A`. */
+	touchedPaths: string[];
 }
 
 function makeLoader(systemPrompt: string): ResourceLoader {
@@ -98,12 +101,14 @@ export async function runPhase(opts: PhaseRunOptions): Promise<PhaseRunResult> {
 	let text = "";
 	let totalTokens = 0;
 	let streamedAnyText = false;
+	const touchedPaths = new Set<string>();
 	const label = opts.phaseLabel ?? "agent";
 
 	const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
 		switch (event.type) {
 			case "tool_execution_start":
 				toolCall(event.toolName, event.args);
+				captureTouchedPath(event.toolName, event.args, touchedPaths);
 				break;
 			case "tool_execution_end":
 				toolEnd(event.toolName, event.isError);
@@ -164,12 +169,23 @@ export async function runPhase(opts: PhaseRunOptions): Promise<PhaseRunResult> {
 			totalTokens,
 			model: modelLabel(opts.model),
 			messages: session.messages,
+			touchedPaths: [...touchedPaths],
 		};
 	} finally {
 		stopSpinner();
 		unsubscribe();
 		session.dispose();
 	}
+}
+
+/** Record the path of any edit/write tool call so the orchestrator can commit
+ *  only the files the agent actually touched. */
+function captureTouchedPath(toolName: string, args: unknown, out: Set<string>): void {
+	if (toolName !== "edit" && toolName !== "write") return;
+	if (!args || typeof args !== "object") return;
+	const path = (args as { path?: unknown; file_path?: unknown }).path
+		?? (args as { file_path?: unknown }).file_path;
+	if (typeof path === "string" && path.trim()) out.add(path.trim());
 }
 
 /** Concatenate all text blocks from assistant messages, in order. */

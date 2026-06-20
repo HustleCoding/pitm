@@ -52,6 +52,30 @@ export async function stageAll(cwd: string): Promise<void> {
 	await gitOk(["add", "-A"], cwd);
 }
 
+/** Stage only the given paths. Missing paths are ignored (best-effort).
+ *  This is the safe replacement for `git add -A`: it never sweeps up
+ *  unrelated uncommitted changes in the working tree. */
+export async function stagePaths(paths: string[], cwd: string): Promise<void> {
+	if (paths.length === 0) return;
+	// `git add -- <paths>` — paths may be relative to cwd. `--` separates
+	// paths from options and avoids pathspec-as-option ambiguity.
+	const r = await run("git", ["add", "--", ...paths], cwd);
+	if (r.exitCode !== 0) {
+		// A path may not exist (e.g. the agent staged+deleted it in a later
+		// turn). Don't fail the whole commit over one bad path.
+		const knownMissing = /did not match any files|pathspec/i.test(r.stderr);
+		if (!knownMissing) {
+			throw new GitError(`git add ${paths.join(" ")} failed (exit ${r.exitCode}): ${r.stderr || r.stdout}`);
+		}
+	}
+}
+
+/** Stage tracked-file modifications only (no untracked files). Safe fallback
+ *  when we don't have explicit paths (e.g. bash-created files we can't trace). */
+export async function stageTracked(cwd: string): Promise<void> {
+	await gitOk(["add", "-u"], cwd);
+}
+
 export async function commit(message: string, cwd: string): Promise<string> {
 	await gitOk(["commit", "-m", message, "--no-verify"], cwd);
 	return await gitOk(["rev-parse", "HEAD"], cwd);

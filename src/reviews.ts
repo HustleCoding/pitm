@@ -3,7 +3,7 @@
  * session, commit + push, then hand back to CI. Bounded review rounds.
  */
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { ghPrReviewComments, isClean, pushBranch, type ReviewComment } from "./git.ts";
+import { ghPrReviewComments, isClean, pushBranch, stagePaths, stageTracked, type ReviewComment } from "./git.ts";
 import { commit, stageAll } from "./git.ts";
 import { runReviewer } from "./phases/reviewer.ts";
 import { log, saveState, type State } from "./state.ts";
@@ -68,9 +68,10 @@ export async function runReviewLoop(opts: ReviewLoopOptions): Promise<ReviewOutc
 		for (const c of newComments) if (c.body) known.add(c.body);
 		log(state, "review", `Reviewer done (${result.totalTokens} tokens).`, result.model);
 
-		// Commit + push any changes the reviewer made. If nothing changed, skip.
+		// Commit + push only the files the reviewer touched. If nothing changed, skip.
 		try {
-			await stageAll(cwd);
+			if (result.touchedPaths.length > 0) await stagePaths(result.touchedPaths, cwd);
+			else await stageTracked(cwd);
 			const clean = await isClean(cwd);
 			if (!clean) {
 				await commit(`fix(review): address round ${round} comments\n\n${state.goal}`, cwd);

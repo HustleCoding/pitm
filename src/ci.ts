@@ -10,7 +10,7 @@ import {
 	summarizeChecks,
 	type CheckSummary,
 } from "./git.ts";
-import { commit, stageAll } from "./git.ts";
+import { commit, stagePaths, stageTracked } from "./git.ts";
 import { runFixer, isEnvironmental } from "./phases/fixer.ts";
 import { log, saveState, type State } from "./state.ts";
 import { modelLabel } from "./models.ts";
@@ -83,9 +83,9 @@ export async function runCiLoop(opts: CiLoopOptions): Promise<CiOutcome> {
 			return needsHuman(state, cwd, `Fixer flagged an environmental (non-code) CI failure:\n${result.text.slice(0, 600)}`);
 		}
 
-		// Commit + push the fix.
+		// Commit + push the fix (only the files the fixer touched).
 		try {
-			await stageAll(cwd);
+			await stageFixChanges(cwd, result.touchedPaths);
 			await commit(`fix(ci): address failing checks (attempt ${attempt})\n\n${state.goal}`, cwd);
 			await pushBranch(cwd);
 		} catch (e) {
@@ -120,6 +120,15 @@ async function waitForChecks(
 		if (Date.now() >= deadline) return summary; // still pending -> caller treats as needs_human
 		await sleep(pollMs);
 	}
+}
+
+/** Stage only the fixer's touched files; fall back to tracked modifications. */
+async function stageFixChanges(cwd: string, touchedPaths: string[]): Promise<void> {
+	if (touchedPaths.length > 0) {
+		await stagePaths(touchedPaths, cwd);
+		return;
+	}
+	await stageTracked(cwd);
 }
 
 function needsHuman(state: State, cwd: string, message: string): CiOutcome {
