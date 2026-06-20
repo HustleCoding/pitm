@@ -49,6 +49,8 @@ export interface StartOptions {
 	goal: string;
 	cwd?: string;
 	config?: PitmConfig;
+	/** Override the planner model ref ("provider/modelId") for dry-plan runs. */
+	plannerOverride?: string;
 }
 
 export interface RunContext {
@@ -119,6 +121,39 @@ export async function startRun(opts: StartOptions): Promise<State> {
 	await workLoop(state, ctx);
 	await afterPr(state, ctx);
 	return state;
+}
+
+export interface PlanPreview {
+	goal: string;
+	model: string;
+	tasks: Task[];
+	totalTokens: number;
+}
+
+/** Dry-run: run only the planner, print tasks, no git/state/PR side effects. */
+export async function planOnly(opts: StartOptions): Promise<PlanPreview> {
+	const cwd = opts.cwd ?? process.cwd();
+	const config = opts.config ?? loadConfig(cwd);
+	const { registry } = buildRegistry();
+	let plannerModel: Model<Api> | undefined;
+	if (opts.plannerOverride) {
+		const { resolveModel } = await import("./models.ts");
+		plannerModel = resolveModel(registry, opts.plannerOverride);
+	} else {
+		const byPhase = resolveAll(registry, config.models);
+		plannerModel = byPhase.planner;
+	}
+	if (!plannerModel) {
+		throw new PitmError("No planner model resolved.", "MODEL_RESOLUTION_ERROR");
+	}
+	const plan = await runPlanner(cwd, opts.goal, plannerModel, config.verifyCommand);
+	const tasks = toTasks(plan);
+	return {
+		goal: opts.goal,
+		model: modelLabel(plannerModel),
+		tasks,
+		totalTokens: 0,
+	};
 }
 
 /** Resume an existing run from its saved phase. */

@@ -61,6 +61,6 @@ export function resolveAll(
 
 export function modelLabel(m: Model<Api> | undefined): string {
 	if (!m) return "(unset)";
-	const providerId = (m.provider as { id?: string }).id ?? "(unknown)";
+	const providerId = typeof m.provider === "string" ? m.provider : ((m.provider as { id?: string }).id ?? "(unknown)");
 	return `${providerId}/${m.id}`;
 }

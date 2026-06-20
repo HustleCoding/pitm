@@ -8,7 +8,7 @@
  *   pitm steer "<message>"    append a steering message to the mailbox
  *   pitm watch [--port N]     start the HTTP mailbox endpoint for external injects
  */
-import { startRun, resumeRun } from "./orchestrator.ts";
+import { planOnly, startRun, resumeRun } from "./orchestrator.ts";
 import { runDoctor } from "./doctor.ts";
 import { requireState, saveState } from "./state.ts";
 import { isPitmError } from "./errors.ts";
@@ -23,7 +23,7 @@ function usage(): never {
 	console.log(`pi-task-master — autonomous task orchestration over the pi SDK
 
 Usage:
-  pitm start "<goal>"        Plan, implement, open PR, run CI/review/verify, (merge).
+  pitm start "<goal>" [--dry-plan] [--planner provider/modelId]   Plan + full pipeline, or just plan with --dry-plan.
   pitm resume                Resume the current run from its saved phase.
   pitm status                Show the current run's phase, tasks, and PR.
   pitm doctor                Check pi auth, gh, git, config, and models.
@@ -38,11 +38,16 @@ async function main(argv: string[]): Promise<void> {
 	const [cmd, ...rest] = argv;
 	switch (cmd) {
 		case "start": {
-			const goal = rest.join(" ").trim();
+			const { goal, dryPlan, planner } = parseStartArgs(rest);
 			if (!goal) usage();
 			await withSigint(async () => {
-				const state = await startRun({ goal });
-				printSummary(state);
+				if (dryPlan) {
+					const preview = await planOnly({ goal, plannerOverride: planner });
+					printPlanPreview(preview);
+				} else {
+					const state = await startRun({ goal });
+					printSummary(state);
+				}
 			});
 			return;
 		}
@@ -116,6 +121,37 @@ function parsePortFlag(rest: string[]): number | undefined {
 		if (m) return Number(m[1]);
 	}
 	return undefined;
+}
+
+/** Parse `start` args: strip --dry-plan, return the goal + the flag. */
+function parseStartArgs(rest: string[]): { goal: string; dryPlan: boolean; planner?: string } {
+	const dryPlan = rest.some((a) => a === "--dry-plan" || a === "--plan-only");
+	let planner: string | undefined;
+	const filtered: string[] = [];
+	for (let i = 0; i < rest.length; i++) {
+		const a = rest[i]!;
+		if (a === "--dry-plan" || a === "--plan-only") continue;
+		if (a === "--planner") { planner = rest[i + 1]; i++; continue; }
+		const m = a.match(/^--planner=(.+)$/);
+		if (m) { planner = m[1]; continue; }
+		filtered.push(a);
+	}
+	return { goal: filtered.join(" ").trim(), dryPlan, planner };
+}
+
+function printPlanPreview(preview: { goal: string; model: string; tasks: Array<{ id: string; title: string; details: string; successCriteria: string[] }> }): void {
+	console.log(`\nGoal:   ${preview.goal}`);
+	console.log(`Model:  ${preview.model}`);
+	console.log(`Tasks:  ${preview.tasks.length}`);
+	for (const t of preview.tasks) {
+		console.log(`\n  ${t.id}: ${t.title}`);
+		console.log(`    ${t.details.split("\n").join("\n    ")}`);
+		if (t.successCriteria.length > 0) {
+			console.log(`    Success criteria:`);
+			for (const c of t.successCriteria) console.log(`      - ${c}`);
+		}
+	}
+	console.log("\n(dry-plan: no branch, no state, no PR created.)");
 }
 
 function printSummary(state: ReturnType<typeof requireState>): void {

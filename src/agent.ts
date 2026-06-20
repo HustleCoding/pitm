@@ -120,6 +120,23 @@ export async function runPhase(opts: PhaseRunOptions): Promise<PhaseRunResult> {
 			}
 		}
 		const finalText = extractAssistantText(session.messages) ?? text;
+		if (!finalText) {
+			const err = (session.agent.state as { errorMessage?: string }).errorMessage;
+			if (err) {
+				throw new Error(`Agent produced no text output. Agent error: ${err}`);
+			}
+			// Dump message roles + stop reasons for diagnosis.
+			const diag = session.messages
+				.map((m) => {
+					if (m.role === "assistant") {
+						const am = m as { stopReason?: string; errorMessage?: string; usage?: { totalTokens?: number } };
+						return `  assistant stopReason=${am.stopReason ?? "?"} err=${am.errorMessage ?? "none"} tokens=${am.usage?.totalTokens ?? 0}`;
+					}
+					return `  ${m.role}`;
+				})
+				.join("\n");
+			throw new Error(`Agent produced no text output. Message trace:\n${diag}`);
+		}
 		return {
 			text: finalText,
 			totalTokens,
