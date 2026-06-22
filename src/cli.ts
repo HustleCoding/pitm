@@ -256,8 +256,8 @@ async function withSigint(fn: () => Promise<void>): Promise<void> {
 			const s = requireState();
 			if (!isRunExists && isActivePhase(s.phase)) {
 				s.phase = "needs_human";
-			s.humanNote = (e as Error).message;
-			saveState(s);
+				s.humanNote = (e as Error).message;
+				saveState(s);
 			}
 		} catch {
 			/* no state to save */

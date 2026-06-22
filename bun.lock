@@ -6,6 +6,7 @@
       "name": "pi-task-master",
       "dependencies": {
         "@earendil-works/pi-coding-agent": "0.79.8",
+        "proper-lockfile": "4.1.2",
       },
       "devDependencies": {
         "@types/node": "^22.0.0",

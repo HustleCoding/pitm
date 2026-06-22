@@ -48,7 +48,7 @@ function buildPrompt(input: WorkerInput): string {
 		.join("\n");
 	return `Overall goal: ${input.goal}
 ${context ? `Already completed:\n${context}\n` : ""}
-Your task (${input.task.id}): ${input.task.id}
+Your task (${input.task.id}): ${input.task.title}
 
 Title: ${input.task.title}
 Details: ${input.task.details}
