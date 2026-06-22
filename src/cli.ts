@@ -25,7 +25,7 @@ function usage(): never {
 Usage:
   pitm start "<goal>" [--dry-plan] [--planner provider/modelId] [--force]   Plan + full pipeline, or just plan with --dry-plan.
   pitm resume                Resume the current run from its saved phase.
-  pitm status                Show the current run's phase, tasks, and PR.
+  pitm status [--json]       Show the current run's phase, tasks, and PR.
   pitm doctor                Check pi auth, gh, git, config, and models.
   pitm steer "<message>"     Append a steering message to the mailbox.
   pitm watch [--port N]      Start the HTTP mailbox endpoint (default :7331).
@@ -60,8 +60,14 @@ async function main(argv: string[]): Promise<void> {
 			return;
 		}
 		case "status": {
+			const jsonMode = rest.includes('--json');
 			try {
-				printSummary(requireState());
+				const state = requireState();
+				if (jsonMode) {
+					printStatusJson(state);
+				} else {
+					printSummary(state);
+				}
 			} catch (e) {
 				console.log(`No active pi-task-master run in this repo. Start one with: pitm start "<goal>"`);
 				process.exit(0);
@@ -196,6 +202,28 @@ function printPlanPreview(preview: { goal: string; model: string; tasks: Array<{
 		}
 	}
 	console.log("\n(dry-plan: no branch, no state, no PR created.)");
+}
+
+function printStatusJson(state: ReturnType<typeof requireState>): void {
+	console.log(JSON.stringify({
+		goal: state.goal,
+		phase: state.phase,
+		branch: state.branch,
+		pr: state.pr ?? null,
+		humanNote: state.humanNote ?? null,
+		tasks: state.tasks.map((t) => ({
+			id: t.id,
+			title: t.title,
+			status: t.status,
+			attempts: t.attempts,
+			...(t.commitSha !== undefined ? { commitSha: t.commitSha } : {}),
+		})),
+		budget: {
+			spentTokens: state.budget.spentTokens,
+			maxTokensPerRun: state.budget.maxTokensPerRun,
+		},
+		pendingMailbox: state.mailbox.filter((m) => m.deliveredAt === undefined).length,
+	}, null, 2));
 }
 
 function printSummary(state: ReturnType<typeof requireState>): void {
