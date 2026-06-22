@@ -1,0 +1,19 @@
+{
+  "models": {
+    "planner":  "anthropic/claude-sonnet-4-6",
+    "worker":   "anthropic/claude-haiku-4-5",
+    "fixer":    "openai/gpt-5-mini",
+    "reviewer": "anthropic/claude-sonnet-4-6",
+    "verifier": "anthropic/claude-sonnet-4-6"
+  },
+  "verifyCommand": "npm test",
+  "git": {
+    "targetBranch": "main",
+    "autoPush": true,
+    "autoMerge": false
+  },
+  "budget": {
+    "maxTokensPerRun": 2000000,
+    "maxCiFixRetries": 3
+  }
+}

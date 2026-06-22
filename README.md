@@ -60,7 +60,7 @@ EOF
 echo ".pitm/" >> .gitignore    # keep run state out of git
 ```
 
-Full schema in [`.pitm/config.example.json`](./.pitm/config.example.json). The two fields you must set per repo:
+Full schema in [`config.example.json`](./config.example.json). The two fields you must set per repo:
 
 - **`verifyCommand`** — the command that proves the work is correct (`bun run verify`, `npm test`, `cargo test`, …). The worker runs it after implementing each task; the verifier runs it again before declaring done.
 - **`git.targetBranch`** — the branch PRs target (usually `main` or `master`).
