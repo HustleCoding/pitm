@@ -1,17 +1,23 @@
 {
+  "_comment": "Copy this to .pitm/config.json in your target repo. See README for details.",
+
   "models": {
-    "planner":  "anthropic/claude-sonnet-4-6",
-    "worker":   "anthropic/claude-haiku-4-5",
-    "fixer":    "openai/gpt-5-mini",
-    "reviewer": "anthropic/claude-sonnet-4-6",
-    "verifier": "anthropic/claude-sonnet-4-6"
+    "_comment": "Model refs: 'provider/modelId'. Use openrouter/ prefix with OPENROUTER_API_KEY.",
+    "planner":  "openrouter/anthropic/claude-sonnet-4.6",
+    "worker":   "openrouter/anthropic/claude-sonnet-4.6",
+    "fixer":    "openrouter/openai/gpt-5-mini",
+    "reviewer": "openrouter/anthropic/claude-sonnet-4.6",
+    "verifier": "openrouter/anthropic/claude-sonnet-4.6"
   },
+
   "verifyCommand": "npm test",
+
   "git": {
     "targetBranch": "main",
     "autoPush": true,
     "autoMerge": false
   },
+
   "budget": {
     "maxTokensPerRun": 2000000,
     "maxCiFixRetries": 3

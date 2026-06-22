@@ -1,160 +1,272 @@
 # pi-task-master
 
-Autonomous task orchestration over the [pi](https://github.com/earendil-works/pi-coding-agent) agent SDK — **model-agnostic** and **PR-based**. Give it a goal; it plans, implements, commits, pushes, and opens a pull request. State persists between runs so it resumes where it left off.
+Autonomous task orchestration over the [pi](https://github.com/earendil-works/pi-coding-agent) agent SDK — **model-agnostic** and **PR-based**. Give it a goal; it plans, implements, commits, pushes, and opens a pull request.
 
-Inspired by [`developerz-ai/claude-task-master`](https://github.com/developerz-ai/claude-task-master), but provider-neutral: the planner, worker, fixer, and reviewer can each run on a **different model** (Claude, GPT, GLM, DeepSeek, o3, …) routed per phase. That routing is the reason this exists — claude-task-master is Claude-only.
+```
+pitm start "Add a /healthz route that returns 200 OK with a test"
+```
 
-> **Status: Phase 1–4 complete.** `start` runs the full pipeline — plan → work → PR → CI fix loop → review loop → success-criteria verification → (opt-in) merge. `resume`/`status`/`doctor`/`steer`/`watch` all work. Auto-merge defaults **off**; human approval is still the recommended gate for real repos. Multi-instance concurrency is advisory (file lock + HTTP mailbox).
+The planner, worker, fixer, reviewer, and verifier can each run on a **different model** (Claude, GPT, Gemini, DeepSeek, GLM, …) routed per phase. That routing is the reason this exists — most task orchestrators lock you into a single provider.
 
-## Install
+> **Status:** `start` runs the full pipeline — plan → work → PR → CI fix loop → review loop → success-criteria verification → (opt-in) merge. `resume`/`status`/`doctor`/`steer`/`watch` all work.
 
-### Prerequisites
+---
 
-- **[Bun](https://bun.sh)** 1.3+ (runtime)
-- **[pi](https://github.com/earendil-works/pi-coding-agent)** — the agent harness, authenticated with at least one model provider. Run `pi` once interactively and log in, or set provider API keys in `~/.pi/agent/auth.json`.
-- **[GitHub CLI](https://cli.github.com)** (`gh`) — logged in via `gh auth login`.
-- **git** — with push access to the repo you want the agent to work on.
+## Quick Start (5 minutes)
 
-### Get the code
+### 1. Install prerequisites
+
+| Tool | Why | Install |
+|------|-----|---------|
+| [Bun](https://bun.sh) 1.3+ | Runtime | `curl -fsSL https://bun.sh/install \| bash` |
+| [GitHub CLI](https://cli.github.com) (`gh`) | Creates PRs | `brew install gh` then `gh auth login` |
+| git | Push access to target repo | (usually pre-installed) |
+
+### 2. Install pitm
 
 ```bash
 git clone https://github.com/HustleCoding/pitm.git
 cd pitm
-bun install        # installs the pi SDK + types
-bun link           # makes `pitm` available on your PATH
+bun install
+bun link            # makes `pitm` available globally on your PATH
 ```
 
-Verify it can run:
+### 3. Set up model access
+
+pitm uses the **pi agent SDK** to talk to AI models. It supports 30+ providers. You need at least one API key.
+
+**Easiest option — OpenRouter (one key, all models):**
 
 ```bash
-pitm --help
-pitm doctor        # checks pi auth, gh, git, config, and model availability
+export OPENROUTER_API_KEY="sk-or-v1-..."
 ```
 
-`doctor` must pass before you run anything real. If it fails, it tells you exactly what's missing (e.g. `gh auth status` not logged in, a routed model not found).
+The SDK picks it up automatically. With OpenRouter, use model refs like `openrouter/anthropic/claude-sonnet-4.6` in your config.
 
-### Where `pitm` reads auth from
-
-`pitm` does **not** store API keys. It reuses your existing pi credentials at `~/.pi/agent/auth.json` and the models declared in `~/.pi/agent/models.json` / `~/.pi/agent/settings.json`. So you must have `pi` set up and working on that machine first.
-
-## Configure (in the repo you want it to work on)
-
-`pitm` is a tool you run **from inside a target repo** (the codebase you want changed). It does not modify itself. From that target repo:
+**Direct provider keys** (set any you have):
 
 ```bash
+export ANTHROPIC_API_KEY="sk-ant-..."     # for anthropic/claude-*
+export OPENAI_API_KEY="sk-..."            # for openai/gpt-*
+export DEEPSEEK_API_KEY="sk-..."          # for deepseek/deepseek-*
+export GEMINI_API_KEY="..."               # for google/gemini-*
+```
+
+Or store them permanently in `~/.pi/agent/auth.json`:
+
+```json
+{
+  "anthropic": { "type": "api_key", "key": "sk-ant-..." },
+  "openrouter": { "type": "api_key", "key": "sk-or-v1-..." }
+}
+```
+
+<details>
+<summary>Full provider table (click to expand)</summary>
+
+| Provider | Env Variable | auth.json key |
+|----------|-------------|---------------|
+| Anthropic | `ANTHROPIC_API_KEY` | `anthropic` |
+| OpenAI | `OPENAI_API_KEY` | `openai` |
+| OpenRouter | `OPENROUTER_API_KEY` | `openrouter` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek` |
+| Google Gemini | `GEMINI_API_KEY` | `google` |
+| Mistral | `MISTRAL_API_KEY` | `mistral` |
+| Groq | `GROQ_API_KEY` | `groq` |
+| xAI | `XAI_API_KEY` | `xai` |
+| Together AI | `TOGETHER_API_KEY` | `together` |
+| Fireworks | `FIREWORKS_API_KEY` | `fireworks` |
+| NVIDIA NIM | `NVIDIA_API_KEY` | `nvidia` |
+| Cerebras | `CEREBRAS_API_KEY` | `cerebras` |
+| Hugging Face | `HF_TOKEN` | `huggingface` |
+
+</details>
+
+### 4. Configure your target repo
+
+Go to the repo you want pitm to work on and create a config:
+
+```bash
+cd path/to/your-project
+
 mkdir -p .pitm
 cat > .pitm/config.json <<'EOF'
 {
   "models": {
-    "planner":  "opencode-go/glm-5.2",
-    "worker":   "opencode-go/glm-5.2",
-    "fixer":    "openai-codex/gpt-5.4",
-    "reviewer": "opencode-go/glm-5.2",
-    "verifier": "opencode-go/glm-5.2"
+    "planner":  "openrouter/anthropic/claude-sonnet-4.6",
+    "worker":   "openrouter/anthropic/claude-sonnet-4.6",
+    "fixer":    "openrouter/openai/gpt-5-mini",
+    "reviewer": "openrouter/anthropic/claude-sonnet-4.6",
+    "verifier": "openrouter/anthropic/claude-sonnet-4.6"
   },
-  "verifyCommand": "bun run verify",
-  "git": { "targetBranch": "main", "autoPush": true, "autoMerge": false },
-  "budget": { "maxTokensPerRun": 2000000, "maxCiFixRetries": 3 }
+  "verifyCommand": "npm test",
+  "git": {
+    "targetBranch": "main",
+    "autoPush": true,
+    "autoMerge": false
+  }
 }
 EOF
-echo ".pitm/" >> .gitignore    # keep run state out of git
+
+echo ".pitm/" >> .gitignore
 ```
 
-Full schema in [`config.example.json`](./config.example.json). The two fields you must set per repo:
+**You must set these two fields for each repo:**
 
-- **`verifyCommand`** — the command that proves the work is correct (`bun run verify`, `npm test`, `cargo test`, …). The worker runs it after implementing each task; the verifier runs it again before declaring done.
-- **`git.targetBranch`** — the branch PRs target (usually `main` or `master`).
+- **`verifyCommand`** — the command that proves the work is correct (`npm test`, `bun run typecheck`, `cargo test`, `pytest`, …). The worker runs this after each task; the verifier runs it again at the end.
+- **`git.targetBranch`** — the branch PRs merge into (usually `main` or `master`).
 
-Model refs are `"provider/modelId"` and must resolve via pi. Check what's available with `pitm doctor`, or look at `pi`'s model list. Pick API-key-authenticated providers; OAuth-only credentials can be rejected by some orgs.
+See [`config.example.json`](./config.example.json) for the full schema with all options.
 
-## Use
-
-From inside the target repo:
+### 5. Run it
 
 ```bash
-pitm doctor                 # check pi auth, gh, git, config, model availability
-pitm start "Add a /healthz route to apps/api with a test" --dry-plan   # preview the plan, no side effects
-pitm start "Add a /healthz route to apps/api with a test"              # real run: plan → work → PR → CI → review → verify
-pitm status                 # phase, tasks, PR url, token budget
-pitm resume                 # continue after a SIGINT or a failed run
-pitm steer "also cover the 503 case"   # queue a steering message for the running worker
-pitm watch --port 7331      # start the HTTP mailbox endpoint for external injects
+# Check everything is set up correctly
+pitm doctor
+
+# Preview the plan (no branch, no PR, no tokens spent on execution)
+pitm start "Add a /healthz route that returns 200 OK" --dry-plan
+
+# Run the full pipeline
+pitm start "Add a /healthz route that returns 200 OK"
 ```
 
-State lives at `.pitm/state.json` (one run per repo). Delete it to start over.
+That's it. pitm will:
+1. **Plan** — read your codebase, produce a task list
+2. **Work** — implement each task, run your verify command
+3. **Commit & Push** — one commit per task, push to a `pitm/<date>-<slug>` branch
+4. **Open a PR** — via `gh pr create`
+5. **Fix CI** — if CI fails, a fixer agent reads the logs and pushes a fix
+6. **Handle review** — if there are review comments, an agent addresses them
+7. **Verify** — a verifier agent checks all success criteria pass
+8. **Done** — or halts at `needs_human` if something needs your attention
 
-### The full pipeline
+---
+
+## All Commands
+
+```
+pitm start "<goal>"                Full pipeline: plan → work → PR → CI → review → verify
+pitm start "<goal>" --dry-plan     Preview the plan only (no side effects)
+pitm start "<goal>" --force        Overwrite an existing run
+pitm resume                        Continue from saved phase after interruption
+pitm status                        Show phase, tasks, PR url, token budget
+pitm status --json                 Same as above, structured JSON output
+pitm reset                         Delete .pitm/state.json to start fresh
+pitm doctor                        Check auth, config, models, gh, git
+pitm steer "<message>"             Queue a steering message for the running worker
+pitm watch [--port N]              Start HTTP mailbox endpoint (default :7331)
+```
+
+---
+
+## Model Configuration Guide
+
+Model refs use the format `"provider/modelId"`. The five phases can each use a different model:
+
+| Phase | Role | Recommended |
+|-------|------|-------------|
+| `planner` | Reads codebase, produces task list (read-only) | Strong model (Sonnet, GPT-5) |
+| `worker` | Implements tasks, runs verify command | Any capable coder |
+| `fixer` | Reads CI failure logs, pushes fixes | Fast + cheap |
+| `reviewer` | Addresses PR review comments | Strong model |
+| `verifier` | Checks success criteria pass (read-only) | Strong model |
+
+**Example configs:**
+
+Using OpenRouter (recommended — one API key for everything):
+```json
+{
+  "models": {
+    "planner":  "openrouter/anthropic/claude-sonnet-4.6",
+    "worker":   "openrouter/anthropic/claude-haiku-4.5",
+    "fixer":    "openrouter/openai/gpt-5-mini",
+    "reviewer": "openrouter/anthropic/claude-sonnet-4.6",
+    "verifier": "openrouter/anthropic/claude-sonnet-4.6"
+  }
+}
+```
+
+Using direct Anthropic key:
+```json
+{
+  "models": {
+    "planner":  "anthropic/claude-sonnet-4-6",
+    "worker":   "anthropic/claude-haiku-4-5",
+    "fixer":    "anthropic/claude-haiku-4-5",
+    "reviewer": "anthropic/claude-sonnet-4-6",
+    "verifier": "anthropic/claude-sonnet-4-6"
+  }
+}
+```
+
+Run `pitm doctor` to verify all your model refs resolve correctly.
+
+---
+
+## The Pipeline
 
 ```
 planning → working (per task) → pr_open → ci_pending → ci_fixing → review → verifying → (merging) → done
                                                                               ↘ needs_human
 ```
 
-- **Planner** (strong model, read-only) explores the repo and emits a strict-JSON task list with success criteria.
-- **Worker** (cheap model, edit-capable) implements each task, runs `verifyCommand`, and the orchestrator commits per task. Mid-run steering messages from the mailbox are delivered to the live session via `session.steer()`.
-- **CI loop** — `gh pr checks` is polled; on failure a **fixer** session (multimodal by default) gets the failing logs, pushes a fix, and CI re-runs. Bounded by `maxCiFixRetries`; environmental failures (flaky tests, missing secrets) are detected and routed to `needs_human` instead of patched.
-- **Review loop** — reviewer comments are fetched via `gh api`; a **reviewer** session addresses each, commits, pushes, and CI re-runs. Bounded to 3 rounds.
-- **Verifier** (strong model, read-only) checks every recorded success criterion against the code + a local verify run, emitting a strict JSON verdict. A failed criterion halts at `needs_human`.
+- **Planner** (read-only) explores the repo with `ls`, `read`, `grep`, `find` and emits a strict-JSON task list with success criteria.
+- **Worker** (edit-capable) implements each task, runs `verifyCommand`, and the orchestrator commits per task. Mid-run steering messages from the mailbox are delivered via `session.steer()`.
+- **CI loop** — `gh pr checks` is polled; on failure a **fixer** session gets the failing logs, pushes a fix, and CI re-runs. Bounded by `maxCiFixRetries`.
+- **Review loop** — PR review comments are fetched; a **reviewer** session addresses each, commits, pushes, and CI re-runs. Bounded to 3 rounds.
+- **Verifier** (read-only) checks every success criterion against the code + a local verify run, emitting a strict JSON verdict.
 - **Merge** — only if `git.autoMerge` is `true`; squashes by default.
 
 At any failing gate the run halts at `needs_human` with an actionable note; `pitm resume` continues once you've fixed the blocker.
 
-## Verify
+---
 
-The project's verify command is `bun run typecheck` (it runs `tsc --noEmit` via the `typecheck` package.json script). Workers and contributors **must** make this command pass before considering work done.
+## Troubleshooting
 
-```bash
-bun run typecheck
-```
+### `pitm doctor` fails
 
-## First run (5 minutes)
+| Check | Fix |
+|-------|-----|
+| `pi auth.json` | Set an API key env var or create `~/.pi/agent/auth.json` |
+| `model resolution` | Your config model refs don't match any known model. Run `pitm doctor` to see available models |
+| `gh auth status` | Run `gh auth login` |
+| `git repo` | You're not inside a git repository |
+| `config model refs` | A model ref in `.pitm/config.json` is malformed (missing `/`) |
 
-```bash
-# 1. one-time: install pitm
-git clone https://github.com/HustleCoding/pitm.git && cd pitm && bun install && bun link
+### Run gets stuck
 
-# 2. go to the repo you want changed
-cd path/to/your-project
-mkdir -p .pitm
-# edit .pitm/config.json — set verifyCommand + git.targetBranch for THIS repo
-# (see the Configure section above)
-echo ".pitm/" >> .gitignore
+- **`needs_human`** — read `pitm status` for the note. Fix the blocker, then `pitm resume`.
+- **Ctrl-C'd mid-run** — state is saved; `pitm resume` continues from the saved phase.
+- **Want to start over** — `pitm reset` (or `rm .pitm/state.json`) and run `pitm start` again.
+- **Wrong goal** — `pitm reset`, delete the stray `pitm/...` branch, start fresh.
 
-# 3. sanity check
-pitm doctor
-
-# 4. preview what it would do — no branch, no PR, no tokens spent on execution
-pitm start "Add a /healthz route that returns 200 OK with a test" --dry-plan
-
-# 5. happy with the plan? run it for real
-pitm start "Add a /healthz route that returns 200 OK with a test"
-
-# 6. watch progress / resume after interruption
-pitm status
-pitm resume
-```
-
-What you'll see on a real run: a new `pitm/<date>-<slug>` branch, one commit per planned task, a push, a PR opened via `gh`, then CI polling → (fix attempts if CI fails) → review-comment handling → a verifier verdict. If anything fails past the PR, the run stops at `needs_human` and `pitm resume` picks it back up.
-
-## When a run gets stuck
-
-- **`needs_human`** — read `pitm status` → `Note:`. Fix the blocker (bad model auth, a test it can't pass, an environmental CI failure), then `pitm resume`.
-- **You Ctrl-C'd mid-run** — state is saved; `pitm resume` continues from the saved phase.
-- **You want to start over** — `rm .pitm/state.json` and run `pitm start` again.
-- **Wrong repo / wrong goal** — delete `.pitm/state.json`, delete the stray `pitm/...` branch (`git branch -D pitm/...`), and start fresh.
+---
 
 ## Costs
 
-Every `pitm start` spends real tokens: a planner call plus one worker session per task (plus fixer/reviewer/verifier sessions if it reaches those phases). The `budget.maxTokensPerRun` cap (default 2,000,000) hard-stops runaway runs at `needs_human`. Use `--dry-plan` first to scope the work before spending on execution.
+Every `pitm start` spends real tokens: a planner call plus one worker session per task (plus fixer/reviewer/verifier if it reaches those phases). The `budget.maxTokensPerRun` cap (default 2,000,000) hard-stops runaway runs at `needs_human`.
+
+**Use `--dry-plan` first** to scope the work before spending on execution.
+
+Typical run for a small feature: 30–60k tokens total.
+
+---
 
 ## Safety
 
-- `autoMerge` defaults to **false**. The orchestrator never merges without explicit config, and only after CI + review + verification all pass.
-- A per-run token `budget` cuts off runaway workers before `needs_human`.
+- `autoMerge` defaults to **false**. Never merges without explicit config + CI + review + verification all passing.
+- Per-run token `budget` cuts off runaway workers.
 - CI fix retries are bounded (`maxCiFixRetries`); environmental failures are detected and surfaced, not patched.
-- The worker/fixer/reviewer are instructed never to run git/gh — only the orchestrator touches git.
-- A file lock (`proper-lockfile`) prevents two orchestrators from racing on the same run.
-- The HTTP mailbox binds to `127.0.0.1` by default; don't expose it publicly.
+- Worker/fixer/reviewer never run git/gh — only the orchestrator touches git.
+- File lock (`proper-lockfile`) prevents two orchestrators from racing on the same run.
+- HTTP mailbox binds to `127.0.0.1` by default; don't expose it publicly.
+
+## Contributing
+
+```bash
+bun run typecheck     # must pass — runs tsc --noEmit
+```
 
 ## License
 
