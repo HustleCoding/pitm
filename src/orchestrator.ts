@@ -14,7 +14,7 @@
  * merge; bounded retries route to needs_human instead of looping forever.
  */
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { loadConfig, type PitmConfig } from "./config.ts";
+import { loadConfig, type PhaseName, type PitmConfig } from "./config.ts";
 import { isPitmError, PitmError } from "./errors.ts";
 import {
 	branchFromGoal,
@@ -60,7 +60,7 @@ export interface StartOptions {
 export interface RunContext {
 	cwd: string;
 	config: PitmConfig;
-	byPhase: Partial<Record<string, Model<Api>>>;
+	byPhase: Partial<Record<PhaseName, Model<Api>>>;
 	knownReviewComments: Set<string>;
 	lock: HeldLock;
 }
@@ -351,7 +351,6 @@ async function afterPr(state: State, ctx: RunContext): Promise<void> {
 	const verifierModel = byPhase.verifier;
 	if (!verifierModel) {
 		fail(state, cwd, "No verifier model resolved.", lock);
-		await lock.release();
 		return;
 	}
 	log(state, "verifying", `Verifying success criteria with ${modelLabel(verifierModel)}`, modelLabel(verifierModel));
@@ -367,7 +366,6 @@ async function afterPr(state: State, ctx: RunContext): Promise<void> {
 		});
 	} catch (e) {
 		fail(state, cwd, `Verifier session errored: ${(e as Error).message}`, lock);
-		await lock.release();
 		return;
 	}
 	log(state, "verifying", `Verifier verdict: allPass=${verdict.allPass} (${verdict.results.length} criteria).`);
@@ -378,7 +376,6 @@ async function afterPr(state: State, ctx: RunContext): Promise<void> {
 			.map((r) => `  - ${r.taskId}: ${r.criterion} — ${r.note}`)
 			.join("\n");
 		fail(state, cwd, `Success-criteria verification failed:\n${failures}`, lock);
-		await lock.release();
 		return;
 	}
 
@@ -391,7 +388,6 @@ async function afterPr(state: State, ctx: RunContext): Promise<void> {
 			log(state, "merging", `PR #${state.pr.number} merged (squash).`);
 		} catch (e) {
 			fail(state, cwd, `Merge failed: ${(e as Error).message}`, lock);
-			await lock.release();
 			return;
 		}
 	}

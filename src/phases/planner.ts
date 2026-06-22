@@ -70,7 +70,9 @@ function parsePlannerOutput(text: string): PlannerOutput {
 }
 
 function extractJson(text: string): string | undefined {
-	const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+	// Greedy match: handles nested ``` inside JSON strings (e.g. code samples in
+	// task details). Non-greedy (*?) would stop at the first inner ```.
+	const fenced = text.match(/```(?:json)?\s*([\s\S]*)```/);
 	const candidate = fenced?.[1] ?? text;
 	const start = candidate.indexOf("{");
 	const end = candidate.lastIndexOf("}");

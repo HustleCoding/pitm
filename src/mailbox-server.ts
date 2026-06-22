@@ -11,7 +11,7 @@
  * poller merges them into state and delivers via `session.steer()`.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { MAILBOX_PATH, PITM_DIR, STATE_PATH } from "./config.ts";
@@ -91,7 +91,7 @@ function appendMailbox(mailboxPath: string, cwd: string, text: string): void {
 		? (JSON.parse(readFileSync(mailboxPath, "utf8")) as unknown[])
 		: [];
 	existing.push({ id: randomUUID(), text, createdAt: new Date().toISOString() });
-	appendFileSync(mailboxPath, JSON.stringify(existing, null, 2));
+	writeFileSync(mailboxPath, JSON.stringify(existing, null, 2));
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
