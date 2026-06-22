@@ -18,6 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pitm init` interactive wizard** — detects authenticated providers, lets you pick models per phase, asks for verify command and target branch, writes `.pitm/config.json` and updates `.gitignore`. No more manual JSON editing.
 - `config.example.json` at repo root — annotated configuration template with OpenRouter model refs, verify command, git settings, and budget defaults.
 
 ### Changed

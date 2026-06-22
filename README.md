@@ -84,11 +84,26 @@ Or store them permanently in `~/.pi/agent/auth.json`:
 
 ### 4. Configure your target repo
 
-Go to the repo you want pitm to work on and create a config:
+Go to the repo you want pitm to work on and run the interactive wizard:
 
 ```bash
 cd path/to/your-project
+pitm init
+```
 
+The wizard will:
+1. Detect which providers you have API keys for
+2. Let you pick a provider
+3. Let you choose a model for each phase (planner, worker, fixer, reviewer, verifier)
+4. Ask for your verify command and target branch
+5. Write `.pitm/config.json` and update `.gitignore`
+
+<details>
+<summary>Manual config (click to expand)</summary>
+
+If you prefer to write the config manually:
+
+```bash
 mkdir -p .pitm
 cat > .pitm/config.json <<'EOF'
 {
@@ -111,7 +126,9 @@ EOF
 echo ".pitm/" >> .gitignore
 ```
 
-**You must set these two fields for each repo:**
+</details>
+
+**The two fields you must set for each repo:**
 
 - **`verifyCommand`** — the command that proves the work is correct (`npm test`, `bun run typecheck`, `cargo test`, `pytest`, …). The worker runs this after each task; the verifier runs it again at the end.
 - **`git.targetBranch`** — the branch PRs merge into (usually `main` or `master`).
@@ -146,6 +163,7 @@ That's it. pitm will:
 ## All Commands
 
 ```
+pitm init                          Interactive setup wizard — pick provider + models
 pitm start "<goal>"                Full pipeline: plan → work → PR → CI → review → verify
 pitm start "<goal>" --dry-plan     Preview the plan only (no side effects)
 pitm start "<goal>" --force        Overwrite an existing run
