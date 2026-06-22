@@ -14,7 +14,7 @@ import { requireState, saveState } from "./state.ts";
 import { isPitmError } from "./errors.ts";
 import { appendSteer, mergeExternalMailbox } from "./mailbox.ts";
 import { startMailboxServer } from "./mailbox-server.ts";
-import { MAILBOX_PATH } from "./config.ts";
+import { MAILBOX_PATH, STATE_PATH } from "./config.ts";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -29,6 +29,7 @@ Usage:
   pitm doctor                Check pi auth, gh, git, config, and models.
   pitm steer "<message>"     Append a steering message to the mailbox.
   pitm watch [--port N]      Start the HTTP mailbox endpoint (default :7331).
+  pitm reset                 Delete .pitm/state.json and reset run state.
 
 State lives in .pitm/state.json (one run per repo).`);
 	process.exit(2);
@@ -102,6 +103,19 @@ async function main(argv: string[]): Promise<void> {
 			};
 			process.on("SIGINT", stop);
 			process.on("SIGTERM", stop);
+			return;
+		}
+		case "reset": {
+			try {
+				unlinkSync(STATE_PATH);
+				console.log("Reset complete: .pitm/state.json deleted.");
+			} catch (e) {
+				if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+					console.log("Nothing to reset: .pitm/state.json did not exist.");
+				} else {
+					throw e;
+				}
+			}
 			return;
 		}
 		case "--help":
