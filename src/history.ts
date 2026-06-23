@@ -9,6 +9,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PITM_DIR } from "./config.ts";
 import type { State } from "./state.ts";
+import { bold, dim, green, red } from "./ui.ts";
+
+const out = process.stdout;
 
 export const HISTORY_PATH = join(PITM_DIR, "history.json");
 
@@ -78,12 +81,12 @@ export function printLog(cwd: string = process.cwd(), json = false): void {
 		return;
 	}
 
-	console.log(`\n  Run history (${history.length} run${history.length === 1 ? "" : "s"}):\n`);
+	console.log(`\n  ${bold("Run history", out)} ${dim(`(${history.length} run${history.length === 1 ? "" : "s"}):`, out)}\n`);
 
 	for (let i = 0; i < history.length; i++) {
 		const r = history[i]!;
 		const num = `#${i + 1}`;
-		const icon = r.outcome === "done" ? "✓" : "✗";
+		const icon = r.outcome === "done" ? green("✓", out) : red("✗", out);
 		const date = new Date(r.startedAt).toLocaleDateString("en-US", {
 			month: "short",
 			day: "numeric",
@@ -93,12 +96,12 @@ export function printLog(cwd: string = process.cwd(), json = false): void {
 		const tokens = (r.tokensSpent / 1000).toFixed(1);
 		const tasks = `${r.tasksDone}/${r.taskCount} tasks`;
 
-		console.log(`  ${icon} ${num}  ${date}  ${r.outcome.toUpperCase()}`);
-		console.log(`    Goal:   ${r.goal}`);
-		console.log(`    Branch: ${r.branch}`);
-		if (r.pr) console.log(`    PR:     ${r.pr.url}`);
-		console.log(`    Tasks:  ${tasks}  |  Tokens: ${tokens}k`);
-		if (r.humanNote) console.log(`    Note:   ${r.humanNote.split("\n")[0]}`);
+		console.log(`  ${icon} ${bold(num, out)}  ${date}  ${r.outcome.toUpperCase()}`);
+		console.log(`    ${dim("Goal:   ", out)}${r.goal}`);
+		console.log(`    ${dim("Branch: ", out)}${r.branch}`);
+		if (r.pr) console.log(`    ${dim("PR:     ", out)}${r.pr.url}`);
+		console.log(`    ${dim("Tasks:  ", out)}${tasks}  |  ${dim(`Tokens: ${tokens}k`, out)}`);
+		if (r.humanNote) console.log(`    ${dim("Note:   ", out)}${r.humanNote.split("\n")[0]}`);
 		console.log("");
 	}
 }

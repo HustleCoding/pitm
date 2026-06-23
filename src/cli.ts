@@ -23,26 +23,36 @@ import { isPitmError } from "./errors.ts";
 import { appendSteer, mergeExternalMailbox } from "./mailbox.ts";
 import { startMailboxServer } from "./mailbox-server.ts";
 import { MAILBOX_PATH } from "./config.ts";
+import { bold, cyan, dim, green, red } from "./ui.ts";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
+/** stdout stream — color helpers target this so summary/plan output is colored. */
+const stdout = process.stdout;
+
 function usage(): never {
-	console.log(`pi-task-master — autonomous task orchestration over the pi SDK
+	const d = (s: string) => dim(s, stdout);
+	console.log(`${bold("pitm", stdout)} ${dim("— autonomous task orchestration over the pi SDK", stdout)}
 
-Usage:
-  pitm init                  Interactive setup — pick provider, models, and settings.
-  pitm start "<goal>" [--dry-plan] [--planner provider/modelId] [--force]   Plan + full pipeline, or just plan with --dry-plan.
-  pitm resume                Resume the current run from its saved phase.
-  pitm retry                 Retry a run stuck at needs_human from the failed phase.
-  pitm status                Show the current run's phase, tasks, and PR.
-  pitm log [--json]          Show persistent run history across all past runs.
-  pitm config [get|set]      View or edit .pitm/config.json values.
-  pitm doctor                Check pi auth, gh, git, config, and models.
-  pitm steer "<message>"     Append a steering message to the mailbox.
-  pitm watch [--port N]      Start the HTTP mailbox endpoint (default :7331).
+${bold("Setup", stdout)}
+  pitm init                  ${d("Interactive setup: pick provider, models, settings.")}
+  pitm doctor                ${d("Check pi auth, gh, git, config, and models.")}
+  pitm config [get|set]      ${d("View or edit .pitm/config.json values.")}
 
-State lives in .pitm/state.json (one run per repo).`);
+${bold("Run", stdout)}
+  pitm start "<goal>" [--dry-plan] [--planner provider/modelId] [--force]
+                             ${d("Plan + full pipeline, or just plan with --dry-plan.")}
+  pitm resume                ${d("Resume the current run from its saved phase.")}
+  pitm retry                 ${d("Retry a run stuck at needs_human.")}
+  pitm steer "<message>"     ${d("Append a steering message to the mailbox.")}
+  pitm watch [--port N]      ${d("Start the HTTP mailbox endpoint (default :7331).")}
+
+${bold("Inspect", stdout)}
+  pitm status [--json]       ${d("Show the current run's phase, tasks, and PR.")}
+  pitm log [--json]          ${d("Show persistent run history across all past runs.")}
+
+${d("State lives in .pitm/state.json (one run per repo).")}`);
 	process.exit(2);
 }
 
@@ -83,8 +93,14 @@ async function main(argv: string[]): Promise<void> {
 			return;
 		}
 		case "status": {
+			const json = rest.includes("--json");
 			try {
-				printSummary(requireState());
+				const state = requireState();
+				if (json) {
+					console.log(JSON.stringify(state, null, 2));
+				} else {
+					printSummary(state);
+				}
 			} catch (e) {
 				console.log(`No active pi-task-master run in this repo. Start one with: pitm start "<goal>"`);
 				process.exit(0);
@@ -216,43 +232,54 @@ async function clearExistingRun(): Promise<void> {
 }
 
 function printPlanPreview(preview: { goal: string; model: string; tasks: Array<{ id: string; title: string; details: string; successCriteria: string[] }> }): void {
+	const c = (s: string) => cyan(s, stdout);
+	const dn = (s: string) => dim(s, stdout);
 	console.log(`\nGoal:   ${preview.goal}`);
 	console.log(`Model:  ${preview.model}`);
 	console.log(`Tasks:  ${preview.tasks.length}`);
 	for (const t of preview.tasks) {
-		console.log(`\n  ${t.id}: ${t.title}`);
-		console.log(`    ${t.details.split("\n").join("\n    ")}`);
+		console.log(`\n  ${c(t.id)}: ${t.title}`);
+		console.log(`    ${dn(t.details.split("\n").join("\n    "))}`);
 		if (t.successCriteria.length > 0) {
-			console.log(`    Success criteria:`);
-			for (const c of t.successCriteria) console.log(`      - ${c}`);
+			console.log(`    ${dn("Success criteria:")}`);
+			for (const c2 of t.successCriteria) console.log(`      ${dn("- " + c2)}`);
 		}
 	}
-	console.log("\n(dry-plan: no branch, no state, no PR created.)");
+	console.log(`\n${dn("(dry-plan: no branch, no state, no PR created.)")}`);
 }
 
 function printSummary(state: ReturnType<typeof requireState>): void {
+	const g = (s: string) => green(s, stdout);
+	const r = (s: string) => red(s, stdout);
+	const c = (s: string) => cyan(s, stdout);
+	const dn = (s: string) => dim(s, stdout);
+
+	const phaseColor = state.phase === "done" ? g : state.phase === "needs_human" ? r : c;
+
 	console.log(`\nGoal:   ${state.goal}`);
-	console.log(`Phase:  ${state.phase}`);
-	console.log(`Branch: ${state.branch}`);
-	if (state.pr) console.log(`PR:     ${state.pr.url}`);
-	if (state.humanNote) console.log(`Note:   ${state.humanNote}`);
+	console.log(`Phase:  ${phaseColor(state.phase)}`);
+	console.log(`Branch: ${dn(state.branch)}`);
+	if (state.pr) console.log(`PR:     ${c(state.pr.url)}`);
+	if (state.humanNote) console.log(`Note:   ${r(state.humanNote)}`);
 	if (state.tasks.length === 0) {
-		if (state.phase === "done") {
-			console.log(`Tasks:  (none — planner found nothing to implement for this goal)`);
-		} else {
-			console.log(`Tasks:  (none yet)`);
-		}
+		const note = state.phase === "done"
+			? "(none — planner found nothing to implement for this goal)"
+			: "(none yet)";
+		console.log(`Tasks:  ${dn(note)}`);
 	} else {
 		console.log(`Tasks:`);
 		for (const t of state.tasks) {
-			const mark = t.status === "done" ? "✓" : t.status === "failed" ? "✗" : t.status === "in_progress" ? "→" : " ";
-			console.log(`  ${mark} ${t.id}: ${t.title} [${t.status}]`);
+			const mark = t.status === "done" ? g("✓")
+				: t.status === "failed" ? r("✗")
+				: t.status === "in_progress" ? c("→")
+				: dn(" ");
+			console.log(`  ${mark} ${c(t.id)}: ${t.title} ${dn(`[${t.status}]`)}`);
 		}
 	}
 	const spent = (state.budget.spentTokens / 1000).toFixed(1);
-	console.log(`Budget: ${spent}k / ${state.budget.maxTokensPerRun / 1000}k tokens`);
+	console.log(`Budget: ${dn(`${spent}k / ${state.budget.maxTokensPerRun / 1000}k tokens`)}`);
 	const pending = state.mailbox.filter((m) => !m.deliveredAt).length;
-	if (pending > 0) console.log(`Mailbox: ${pending} undelivered`);
+	if (pending > 0) console.log(`Mailbox: ${dn(`${pending} undelivered`)}`);
 }
 
 function appendToMailboxFile(text: string): void {

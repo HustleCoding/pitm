@@ -7,6 +7,9 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { buildRegistry } from "./models.ts";
 import { PITM_DIR, CONFIG_PATH, type PhaseName } from "./config.ts";
+import { bold, cyan, dim, green } from "./ui.ts";
+
+const out = process.stdout;
 
 const PHASES: { key: PhaseName; label: string; hint: string }[] = [
 	{ key: "planner", label: "Planner", hint: "reads codebase, produces task list (use a strong model)" },
@@ -61,7 +64,7 @@ class Prompt {
 	async choose(question: string, options: string[], defaultIdx = 0): Promise<number> {
 		console.log(`\n${question}`);
 		for (let i = 0; i < options.length; i++) {
-			const marker = i === defaultIdx ? "→" : " ";
+			const marker = i === defaultIdx ? cyan("→", out) : " ";
 			console.log(`  ${marker} ${i + 1}. ${options[i]}`);
 		}
 		const answer = await this.ask(`Choose (1-${options.length})`, String(defaultIdx + 1));
@@ -89,9 +92,8 @@ export async function runInit(cwd: string = process.cwd()): Promise<void> {
 		prompt.close();
 	}
 
-	console.log("\n┌─────────────────────────────────────┐");
-	console.log("│       pitm init — config wizard     │");
-	console.log("└─────────────────────────────────────┘\n");
+	console.log(`\n${bold("pitm init — config wizard", out)}`);
+	console.log(dim("Pick provider, models, and settings for this repo.\n", out));
 
 	// Build registry to discover available models
 	const { registry } = buildRegistry();
@@ -110,15 +112,15 @@ export async function runInit(cwd: string = process.cwd()): Promise<void> {
 	const prompt = new Prompt();
 
 	// Show available providers
-	console.log("Detected providers with authenticated models:\n");
+	console.log(dim("Detected providers with authenticated models:\n", out));
 	for (const g of groups) {
-		console.log(`  • ${g.displayName} (${g.provider}) — ${g.models.length} models`);
+		console.log(`  ${cyan("•", out)} ${bold(g.displayName, out)} ${dim(`(${g.provider}) — ${g.models.length} models`, out)}`);
 	}
 
 	// Routing mode: single provider vs mix-and-match
 	let mixProviders = false;
 	if (groups.length === 1) {
-		console.log(`\nUsing: ${groups[0]!.displayName} (only authenticated provider)`);
+		console.log(`\nUsing: ${bold(groups[0]!.displayName, out)} ${dim("(only authenticated provider)", out)}`);
 	} else {
 		const routingIdx = await prompt.choose(
 			"How do you want to assign models?",
@@ -134,7 +136,7 @@ export async function runInit(cwd: string = process.cwd()): Promise<void> {
 	const models: Partial<Record<PhaseName, string>> = {};
 
 	if (!mixProviders) {
-		// Single-provider mode (original flow)
+		// Single-provider mode
 		let selectedGroup: ProviderGroup;
 		if (groups.length === 1) {
 			selectedGroup = groups[0]!;
@@ -147,24 +149,47 @@ export async function runInit(cwd: string = process.cwd()): Promise<void> {
 		}
 
 		const modelOptions = selectedGroup.models.map((m) => `${m.name} (${m.id})`);
-		console.log(`\nPick a model for each phase (from ${selectedGroup.displayName}):\n`);
 
-		for (const phase of PHASES) {
-			console.log(`  ${phase.label}: ${phase.hint}`);
-			const idx = await prompt.choose(
-				`  Model for ${phase.label}:`,
+		// Shortcut: one model for all phases, vs per-phase selection.
+		const shortcutIdx = await prompt.choose(
+			"How do you want to assign models?",
+			[
+				`Use the same model for all phases`,
+				"Pick a model for each phase separately",
+			],
+		);
+
+		if (shortcutIdx === 0) {
+			// One model for all 5 phases — single selection.
+			const modelIdx = await prompt.choose(
+				`Model for all phases (from ${selectedGroup.displayName}):`,
 				modelOptions,
 				0,
 			);
-			models[phase.key] = selectedGroup.models[idx]!.ref;
-			console.log(`  ✓ ${phase.label} → ${selectedGroup.models[idx]!.ref}\n`);
+			const model = selectedGroup.models[modelIdx]!;
+			for (const phase of PHASES) models[phase.key] = model.ref;
+			console.log(`\n  ${green("✓", out)} All phases → ${bold(model.ref, out)}`);
+		} else {
+			// Per-phase selection (original flow).
+			console.log(`\nPick a model for each phase (from ${selectedGroup.displayName}):\n`);
+
+			for (const phase of PHASES) {
+				console.log(`  ${phase.label}: ${dim(phase.hint, out)}`);
+				const idx = await prompt.choose(
+					`  Model for ${phase.label}:`,
+					modelOptions,
+					0,
+				);
+				models[phase.key] = selectedGroup.models[idx]!.ref;
+				console.log(`  ${green("✓", out)} ${phase.label} → ${selectedGroup.models[idx]!.ref}\n`);
+			}
 		}
 	} else {
 		// Multi-provider mode: pick provider + model per phase
 		console.log("\nPick a provider and model for each phase:\n");
 
 		for (const phase of PHASES) {
-			console.log(`  ${phase.label}: ${phase.hint}`);
+			console.log(`  ${phase.label}: ${dim(phase.hint, out)}`);
 
 			const providerIdx = await prompt.choose(
 				`  Provider for ${phase.label}:`,
@@ -178,7 +203,7 @@ export async function runInit(cwd: string = process.cwd()): Promise<void> {
 				0,
 			);
 			models[phase.key] = group.models[modelIdx]!.ref;
-			console.log(`  ✓ ${phase.label} → ${group.models[modelIdx]!.ref}\n`);
+			console.log(`  ${green("✓", out)} ${phase.label} → ${group.models[modelIdx]!.ref}\n`);
 		}
 	}
 
@@ -221,13 +246,13 @@ export async function runInit(cwd: string = process.cwd()): Promise<void> {
 	const gitignoreContent = existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf8") : "";
 	if (!gitignoreContent.includes(".pitm")) {
 		writeFileSync(gitignorePath, gitignoreContent + (gitignoreContent.endsWith("\n") ? "" : "\n") + ".pitm/\n");
-		console.log("\n✓ Added .pitm/ to .gitignore");
+		console.log(`\n${green("✓", out)} Added .pitm/ to .gitignore`);
 	}
 
-	console.log(`\n✓ Config written to ${CONFIG_PATH}`);
-	console.log("\nNext steps:");
-	console.log("  pitm doctor              # verify everything works");
-	console.log("  pitm start \"<goal>\"      # run the full pipeline");
+	console.log(`\n${green("✓", out)} Config written to ${bold(CONFIG_PATH, out)}`);
+	console.log(`\n${bold("Next steps:", out)}`);
+	console.log(`  ${cyan("pitm doctor", out)}              ${dim("# verify everything works", out)}`);
+	console.log(`  ${cyan("pitm start \"<goal>\"", out)}      ${dim("# run the full pipeline", out)}`);
 }
 
 function detectVerifyCommand(cwd: string): string {

@@ -13,6 +13,7 @@
  *  ✓ planning done (1 task, 3.5k tokens, 12s)
  */
 import { isatty } from "node:tty";
+import { bold, cyan, dim, green, red } from "./ui.js";
 
 const out = process.stderr;
 let spinnerActive = false;
@@ -36,14 +37,14 @@ function clearLine(): void {
 export function startSpinner(label: string): void {
 	if (!isatty(out.fd)) {
 		// Non-TTY: print once, don't animate (logs/CI).
-		write(`  ⟳ ${label}\n`);
+		write(`  ${dim("⟳")} ${dim(label)}\n`);
 		return;
 	}
 	if (spinnerTimer) clearInterval(spinnerTimer);
 	let i = 0;
 	spinnerActive = true;
 	spinnerTimer = setInterval(() => {
-		write(`\r\x1b[K  ${SPINNER[i % SPINNER.length]} ${label}`);
+		write(`\r\x1b[K  ${dim(SPINNER[i % SPINNER.length] ?? "")} ${dim(label)}`);
 		i++;
 	}, 80);
 }
@@ -63,8 +64,8 @@ export function stopSpinner(): void {
 export function phaseBegin(phase: string, model?: string): void {
 	stopSpinner();
 	phaseStartTime = Date.now();
-	const modelPart = model ? `  ${model}` : "";
-	write(`\n▸ ${phase}${modelPart}\n`);
+	const modelPart = model ? `  ${dim(model)}` : "";
+	write(`\n${bold(cyan(`▸ ${phase}`))}${modelPart}\n`);
 }
 
 /** Print a phase completion line with elapsed time + tokens. */
@@ -72,20 +73,20 @@ export function phaseEnd(phase: string, detail: string, tokens?: number): void {
 	stopSpinner();
 	const elapsed = phaseStartTime ? Math.round((Date.now() - phaseStartTime) / 1000) : 0;
 	const tokPart = tokens != null ? `, ${(tokens / 1000).toFixed(1)}k tokens` : "";
-	write(`✓ ${phase} done (${detail}${tokPart}, ${elapsed}s)\n`);
+	write(`${green(`✓ ${phase} done`)} ${dim(`(${detail}${tokPart}, ${elapsed}s)`)}\n`);
 }
 
 /** A single tool call, printed inline as it starts. */
 export function toolCall(name: string, args: unknown): void {
 	stopSpinner();
 	const arg = summarizeToolArgs(name, args);
-	write(`  ↳ ${name.padEnd(6)} ${arg}\n`);
+	write(`  ${dim("↳")} ${name.padEnd(6)} ${dim(arg)}\n`);
 }
 
 /** A tool finished (best-effort status). */
 export function toolEnd(_name: string, isError: boolean): void {
 	void _name;
-	if (isError) write(`    ⚠ tool error\n`);
+	if (isError) write(`    ${red("⚠ tool error")}\n`);
 }
 
 /** A free-form status line from the orchestrator (e.g. "Opening PR…"). */
