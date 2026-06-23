@@ -51,6 +51,10 @@ export function cyan(text: string, stream: Stream = process.stderr): string {
 	return wrap(stream, "\x1b[36m", text);
 }
 
+export function yellow(text: string, stream: Stream = process.stderr): string {
+	return wrap(stream, "\x1b[33m", text);
+}
+
 // --- Styles ----------------------------------------------------------------
 
 export function dim(text: string, stream: Stream = process.stderr): string {

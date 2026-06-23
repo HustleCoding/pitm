@@ -8,6 +8,9 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { loadConfig, parseModelRef, type PhaseName } from "./config.ts";
 import { buildRegistry, resolveAll } from "./models.ts";
 import { currentBranch, ghAuthStatus } from "./git.ts";
+import { bold, dim, green, red, yellow } from "./ui.ts";
+
+const out = process.stdout;
 
 interface Check {
 	name: string;
@@ -116,13 +119,13 @@ export async function runDoctor(cwd: string = process.cwd()): Promise<DoctorRepo
 function report(checks: Check[]): DoctorReport {
 	const allRequiredPassed = checks.filter((c) => c.required).every((c) => c.ok);
 	for (const c of checks) {
-		const flag = c.ok ? "✓" : c.required ? "✗" : "!";
-		console.log(`  ${flag} ${c.name.padEnd(22)} ${c.detail}`);
+		const flag = c.ok ? green("✓", out) : c.required ? red("✗", out) : yellow("!", out);
+		console.log(`  ${flag} ${bold(c.name.padEnd(22), out)} ${dim(c.detail, out)}`);
 	}
 	console.log(
 		allRequiredPassed
-			? "\nDoctor: all required checks passed."
-			: "\nDoctor: required checks FAILED. Fix the ✗ items above.",
+			? `\n${green("✓", out)} Doctor: all required checks passed.`
+			: `\n${red("✗", out)} Doctor: required checks FAILED. Fix the ${red("✗", out)} items above.`,
 	);
 	return { allRequiredPassed, checks };
 }
