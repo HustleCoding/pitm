@@ -25,11 +25,47 @@ import { startMailboxServer } from "./mailbox-server.ts";
 import { MAILBOX_PATH } from "./config.ts";
 import { bold, cyan, dim, green, red } from "./ui.ts";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import { randomUUID } from "node:crypto";
 
 /** stdout stream — color helpers target this so summary/plan output is colored. */
 const stdout = process.stdout;
+
+/**
+ * Resolve the effective working directory.
+ *
+ * 1. Explicit --cwd flag (if present).
+ * 2. $PWD — the shell-set working directory; survives symlink traversal that
+ *    can sometimes cause `process.cwd()` to return the linked-package dir
+ *    instead of the user's project dir (observed with `bun link`).
+ * 3. process.cwd() — OS-reported cwd (fallback).
+ */
+function resolveWorkingDirectory(cwdOverride?: string): string {
+	if (cwdOverride) return resolvePath(cwdOverride);
+	const env = process.env["PWD"];
+	if (env) return resolvePath(env);
+	return process.cwd();
+}
+
+/** Strip --cwd flag from argv, returning { cwd, rest }. */
+function extractCwdFlag(argv: string[]): { cwdOverride?: string; rest: string[] } {
+	const rest: string[] = [];
+	let cwdOverride: string | undefined;
+	for (let i = 0; i < argv.length; i++) {
+		const a = argv[i]!;
+		if (a === "--cwd" && argv[i + 1]) {
+			cwdOverride = argv[++i];
+			continue;
+		}
+		const m = a.match(/^--cwd=(.+)$/);
+		if (m) {
+			cwdOverride = m[1];
+			continue;
+		}
+		rest.push(a);
+	}
+	return { cwdOverride, rest };
+}
 
 function usage(): never {
 	const d = (s: string) => dim(s, stdout);
@@ -51,43 +87,50 @@ ${bold("Run", stdout)}
 ${bold("Inspect", stdout)}
   pitm status [--json]       ${d("Show the current run's phase, tasks, and PR.")}
   pitm log [--json]          ${d("Show persistent run history across all past runs.")}
+  pitm reset                 ${d("Delete .pitm/state.json and mailbox.json to start fresh.")}
+
+${bold("Global flags", stdout)}
+  --cwd <dir>                ${d("Set the working directory (default: $PWD or process.cwd()).")}
 
 ${d("State lives in .pitm/state.json (one run per repo).")}`);
 	process.exit(2);
 }
 
 async function main(argv: string[]): Promise<void> {
-	const [cmd, ...rest] = argv;
+	const { cwdOverride, rest: strippedArgv } = extractCwdFlag(argv);
+	const cwd = resolveWorkingDirectory(cwdOverride);
+
+	const [cmd, ...rest] = strippedArgv;
 	switch (cmd) {
 		case "init": {
-			await runInit();
+			await runInit(cwd);
 			return;
 		}
 		case "start": {
 			const { goal, dryPlan, planner, force } = parseStartArgs(rest);
 			if (!goal) usage();
-			await withSigint(async () => {
+			await withSigint(cwd, async () => {
 				if (dryPlan) {
-					const preview = await planOnly({ goal, plannerOverride: planner });
+					const preview = await planOnly({ goal, cwd, plannerOverride: planner });
 					printPlanPreview(preview);
 					return;
 				}
-				if (force) await clearExistingRun();
-				const state = await startRun({ goal });
+				if (force) await clearExistingRun(cwd);
+				const state = await startRun({ goal, cwd });
 				printSummary(state);
 			});
 			return;
 		}
 		case "resume": {
-			await withSigint(async () => {
-				const state = await resumeRun();
+			await withSigint(cwd, async () => {
+				const state = await resumeRun(cwd);
 				printSummary(state);
 			});
 			return;
 		}
 		case "retry": {
-			await withSigint(async () => {
-				const state = await runRetry();
+			await withSigint(cwd, async () => {
+				const state = await runRetry(cwd);
 				printSummary(state);
 			});
 			return;
@@ -95,7 +138,7 @@ async function main(argv: string[]): Promise<void> {
 		case "status": {
 			const json = rest.includes("--json");
 			try {
-				const state = requireState();
+				const state = requireState(cwd);
 				if (json) {
 					console.log(JSON.stringify(state, null, 2));
 				} else {
@@ -109,15 +152,15 @@ async function main(argv: string[]): Promise<void> {
 		}
 		case "log": {
 			const json = rest.includes("--json");
-			printLog(process.cwd(), json);
+			printLog(cwd, json);
 			return;
 		}
 		case "config": {
-			runConfigCommand(rest);
+			runConfigCommand(rest, cwd);
 			return;
 		}
 		case "doctor": {
-			const { allRequiredPassed } = await runDoctor();
+			const { allRequiredPassed } = await runDoctor(cwd);
 			process.exit(allRequiredPassed ? 0 : 1);
 		}
 		case "steer": {
@@ -125,20 +168,20 @@ async function main(argv: string[]): Promise<void> {
 			if (!text) usage();
 			let state;
 			try {
-				state = requireState();
+				state = requireState(cwd);
 			} catch {
 				console.error("No active run to steer. Start one first: pitm start \"<goal>\"");
 				process.exit(1);
 			}
 			appendSteer(state, text);
-			saveState(state);
-			appendToMailboxFile(text);
+			saveState(state, cwd);
+			appendToMailboxFile(text, cwd);
 			console.log("Steering message queued. It will be delivered to the running session.");
 			return;
 		}
 		case "watch": {
 			const port = parsePortFlag(rest);
-			const srv = await startMailboxServer({ port });
+			const srv = await startMailboxServer({ port, cwd });
 			console.log(`pi-task-master mailbox server on http://${"127.0.0.1"}:${srv.port}`);
 			console.log("  POST /steer      {\"text\":\"...\"}");
 			console.log("  POST /followup   {\"text\":\"...\"}");
@@ -150,6 +193,25 @@ async function main(argv: string[]): Promise<void> {
 			};
 			process.on("SIGINT", stop);
 			process.on("SIGTERM", stop);
+			return;
+		}
+		case "reset": {
+			try {
+				const s = requireState(cwd);
+				if (isActivePhase(s.phase)) {
+					console.error(
+						`A run is still active (phase: ${s.phase}). Use \`pitm resume\` to continue or pass --force:\n  pitm reset --force`,
+					);
+					if (!rest.includes("--force") && !rest.includes("-f")) {
+						process.exit(1);
+					}
+				}
+			} catch { /* no state — fine */ }
+			const statePath = join(cwd, ".pitm", "state.json");
+			const mailboxPath = join(cwd, ".pitm", "mailbox.json");
+			try { unlinkSync(statePath); } catch { /* */ }
+			try { unlinkSync(mailboxPath); } catch { /* */ }
+			console.log("State cleared. You can start a fresh run with: pitm start \"<goal>\"");
 			return;
 		}
 		case "--help":
@@ -205,10 +267,10 @@ function isActivePhase(phase: string): boolean {
 }
 
 /** Remove an existing run's state + branch so `start` can begin a new goal. */
-async function clearExistingRun(): Promise<void> {
+async function clearExistingRun(cwd: string): Promise<void> {
 	let state;
 	try {
-		state = requireState();
+		state = requireState(cwd);
 	} catch {
 		return; // nothing to clear
 	}
@@ -219,14 +281,14 @@ async function clearExistingRun(): Promise<void> {
 		process.exit(1);
 	}
 	const branch = state.branch;
-	try { unlinkSync(".pitm/state.json"); } catch { /* */ }
-	try { unlinkSync(".pitm/mailbox.json"); } catch { /* */ }
+	try { unlinkSync(join(cwd, ".pitm", "state.json")); } catch { /* */ }
+	try { unlinkSync(join(cwd, ".pitm", "mailbox.json")); } catch { /* */ }
 	console.log(`Cleared previous run (${state.phase}): "${state.goal}".`);
 	if (branch) {
 		try {
 			const { deleteBranch, currentBranch } = await import("./git.ts");
-			const cur = await currentBranch(process.cwd()).catch(() => "");
-			if (branch !== cur) await deleteBranch(branch, process.cwd()).catch(() => {});
+			const cur = await currentBranch(cwd).catch(() => "");
+			if (branch !== cur) await deleteBranch(branch, cwd).catch(() => {});
 		} catch { /* branch cleanup is best-effort */ }
 	}
 }
@@ -282,23 +344,23 @@ function printSummary(state: ReturnType<typeof requireState>): void {
 	if (pending > 0) console.log(`Mailbox: ${dn(`${pending} undelivered`)}`);
 }
 
-function appendToMailboxFile(text: string): void {
-	const dir = ".pitm";
+function appendToMailboxFile(text: string, cwd: string): void {
+	const dir = join(cwd, ".pitm");
 	mkdirSync(dir, { recursive: true });
-	const path = join(process.cwd(), MAILBOX_PATH);
+	const path = join(cwd, MAILBOX_PATH);
 	const existing = existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as unknown[]) : [];
 	existing.push({ id: randomUUID(), text, createdAt: new Date().toISOString() });
 	writeFileSync(path, JSON.stringify(existing, null, 2));
 }
 
 /** Wrap a long-running action so SIGINT saves state cleanly instead of corrupting it. */
-async function withSigint(fn: () => Promise<void>): Promise<void> {
+async function withSigint(cwd: string, fn: () => Promise<void>): Promise<void> {
 	const handler = () => {
 		console.error("\nSIGINT: saving state and exiting. Run `pitm resume` to continue.");
 		try {
-			const s = requireState();
-			mergeExternalMailbox(s);
-			saveState(s);
+			const s = requireState(cwd);
+			mergeExternalMailbox(s, cwd);
+			saveState(s, cwd);
 		} catch (e) {
 			console.error(`Could not save state on SIGINT: ${(e as Error).message}`);
 		}
@@ -312,11 +374,11 @@ async function withSigint(fn: () => Promise<void>): Promise<void> {
 		// (e.g. RUN_EXISTS) must not clobber an existing finished run.
 		const isRunExists = isPitmError(e) && e.code === "RUN_EXISTS";
 		try {
-			const s = requireState();
+			const s = requireState(cwd);
 			if (!isRunExists && isActivePhase(s.phase)) {
 				s.phase = "needs_human";
 				s.humanNote = (e as Error).message;
-				saveState(s);
+				saveState(s, cwd);
 			}
 		} catch {
 			/* no state to save */
