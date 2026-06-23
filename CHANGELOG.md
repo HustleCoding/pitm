@@ -18,6 +18,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`pitm log`** — persistent run history. Every completed or failed run is saved to `.pitm/history.json`. Shows goal, outcome, PR link, token usage, and task counts. Use `--json` for machine-readable output.
+- **`pitm retry`** — retry a run stuck at `needs_human` from the failed phase instead of starting over. Resets failed tasks back to pending and resumes the pipeline.
+- **`pitm config get/set`** — view or edit individual config values without re-running init. Supports dot-notation keys (e.g. `pitm config set models.fixer openrouter/google/gemini-2.5-flash`). `pitm config` with no args prints the full resolved config.
+- **Multi-provider routing in `pitm init`** — when multiple providers are authenticated, the wizard now offers "Mix providers" mode to pick a different provider per phase (e.g. Claude for planner, Gemini for fixer, GPT for worker).
 - **`pitm init` interactive wizard** — detects authenticated providers, lets you pick models per phase, asks for verify command and target branch, writes `.pitm/config.json` and updates `.gitignore`. No more manual JSON editing.
 - `config.example.json` at repo root — annotated configuration template with OpenRouter model refs, verify command, git settings, and budget defaults.
 

@@ -115,34 +115,71 @@ export async function runInit(cwd: string = process.cwd()): Promise<void> {
 		console.log(`  • ${g.displayName} (${g.provider}) — ${g.models.length} models`);
 	}
 
-	// Pick provider
-	let selectedGroup: ProviderGroup;
+	// Routing mode: single provider vs mix-and-match
+	let mixProviders = false;
 	if (groups.length === 1) {
-		selectedGroup = groups[0]!;
-		console.log(`\nUsing: ${selectedGroup.displayName} (only authenticated provider)`);
+		console.log(`\nUsing: ${groups[0]!.displayName} (only authenticated provider)`);
 	} else {
-		const providerIdx = await prompt.choose(
-			"Which provider do you want to use?",
-			groups.map((g) => `${g.displayName} (${g.models.length} models)`),
+		const routingIdx = await prompt.choose(
+			"How do you want to assign models?",
+			[
+				"Use one provider for all phases",
+				"Mix providers — pick a different provider per phase",
+			],
 		);
-		selectedGroup = groups[providerIdx]!;
+		mixProviders = routingIdx === 1;
 	}
 
 	// Pick model for each phase
 	const models: Partial<Record<PhaseName, string>> = {};
-	const modelOptions = selectedGroup.models.map((m) => `${m.name} (${m.id})`);
 
-	console.log(`\nPick a model for each phase (from ${selectedGroup.displayName}):\n`);
+	if (!mixProviders) {
+		// Single-provider mode (original flow)
+		let selectedGroup: ProviderGroup;
+		if (groups.length === 1) {
+			selectedGroup = groups[0]!;
+		} else {
+			const providerIdx = await prompt.choose(
+				"Which provider?",
+				groups.map((g) => `${g.displayName} (${g.models.length} models)`),
+			);
+			selectedGroup = groups[providerIdx]!;
+		}
 
-	for (const phase of PHASES) {
-		console.log(`  ${phase.label}: ${phase.hint}`);
-		const idx = await prompt.choose(
-			`  Model for ${phase.label}:`,
-			modelOptions,
-			0,
-		);
-		models[phase.key] = selectedGroup.models[idx]!.ref;
-		console.log(`  ✓ ${phase.label} → ${selectedGroup.models[idx]!.ref}\n`);
+		const modelOptions = selectedGroup.models.map((m) => `${m.name} (${m.id})`);
+		console.log(`\nPick a model for each phase (from ${selectedGroup.displayName}):\n`);
+
+		for (const phase of PHASES) {
+			console.log(`  ${phase.label}: ${phase.hint}`);
+			const idx = await prompt.choose(
+				`  Model for ${phase.label}:`,
+				modelOptions,
+				0,
+			);
+			models[phase.key] = selectedGroup.models[idx]!.ref;
+			console.log(`  ✓ ${phase.label} → ${selectedGroup.models[idx]!.ref}\n`);
+		}
+	} else {
+		// Multi-provider mode: pick provider + model per phase
+		console.log("\nPick a provider and model for each phase:\n");
+
+		for (const phase of PHASES) {
+			console.log(`  ${phase.label}: ${phase.hint}`);
+
+			const providerIdx = await prompt.choose(
+				`  Provider for ${phase.label}:`,
+				groups.map((g) => `${g.displayName} (${g.models.length} models)`),
+			);
+			const group = groups[providerIdx]!;
+			const modelOptions = group.models.map((m) => `${m.name} (${m.id})`);
+			const modelIdx = await prompt.choose(
+				`  Model for ${phase.label} (${group.displayName}):`,
+				modelOptions,
+				0,
+			);
+			models[phase.key] = group.models[modelIdx]!.ref;
+			console.log(`  ✓ ${phase.label} → ${group.models[modelIdx]!.ref}\n`);
+		}
 	}
 
 	// Verify command
