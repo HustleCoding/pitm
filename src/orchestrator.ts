@@ -38,6 +38,7 @@ import { runVerifier } from "./phases/verifier.ts";
 import { runReviewLoop } from "./reviews.ts";
 import { mergeExternalMailbox, startMailboxPoller } from "./mailbox.ts";
 import { acquireLock, type HeldLock } from "./lock.ts";
+import { appendHistory } from "./history.ts";
 import { finish as finishProgress, phaseBegin, phaseEnd, status } from "./progress.ts";
 import {
 	budgetExhausted,
@@ -395,6 +396,7 @@ async function afterPr(state: State, ctx: RunContext): Promise<void> {
 	state.phase = "done";
 	log(state, "done", `Run complete. PR: ${state.pr.url}`);
 	saveState(state, cwd);
+	appendHistory(state, cwd);
 	await lock.release();
 }
 
@@ -437,6 +439,7 @@ function fail(state: State, cwd: string, message: string, lock?: HeldLock): Stat
 	state.humanNote = message;
 	log(state, state.phase, message);
 	saveState(state, cwd);
+	appendHistory(state, cwd);
 	if (lock) void lock.release();
 	return state;
 }

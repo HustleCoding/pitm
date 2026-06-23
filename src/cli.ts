@@ -4,7 +4,10 @@
  *   pitm init                 interactive config wizard — pick provider + models
  *   pitm start "<goal>"       plan -> work -> PR -> CI -> review -> verify -> (merge)
  *   pitm resume               resume the current run from its saved phase
+ *   pitm retry                retry a run stuck at needs_human
  *   pitm status               show the current run's phase, tasks, and PR
+ *   pitm log [--json]         show persistent run history
+ *   pitm config [get|set]     view or edit config values
  *   pitm doctor               check pi auth, gh, git, config, and models
  *   pitm steer "<message>"    append a steering message to the mailbox
  *   pitm watch [--port N]     start the HTTP mailbox endpoint for external injects
@@ -12,6 +15,9 @@
 import { planOnly, startRun, resumeRun } from "./orchestrator.ts";
 import { runDoctor } from "./doctor.ts";
 import { runInit } from "./init.ts";
+import { runRetry } from "./retry.ts";
+import { printLog } from "./history.ts";
+import { runConfigCommand } from "./config-cmd.ts";
 import { requireState, saveState } from "./state.ts";
 import { isPitmError } from "./errors.ts";
 import { appendSteer, mergeExternalMailbox } from "./mailbox.ts";
@@ -28,7 +34,10 @@ Usage:
   pitm init                  Interactive setup — pick provider, models, and settings.
   pitm start "<goal>" [--dry-plan] [--planner provider/modelId] [--force]   Plan + full pipeline, or just plan with --dry-plan.
   pitm resume                Resume the current run from its saved phase.
+  pitm retry                 Retry a run stuck at needs_human from the failed phase.
   pitm status                Show the current run's phase, tasks, and PR.
+  pitm log [--json]          Show persistent run history across all past runs.
+  pitm config [get|set]      View or edit .pitm/config.json values.
   pitm doctor                Check pi auth, gh, git, config, and models.
   pitm steer "<message>"     Append a steering message to the mailbox.
   pitm watch [--port N]      Start the HTTP mailbox endpoint (default :7331).
@@ -66,6 +75,13 @@ async function main(argv: string[]): Promise<void> {
 			});
 			return;
 		}
+		case "retry": {
+			await withSigint(async () => {
+				const state = await runRetry();
+				printSummary(state);
+			});
+			return;
+		}
 		case "status": {
 			try {
 				printSummary(requireState());
@@ -73,6 +89,15 @@ async function main(argv: string[]): Promise<void> {
 				console.log(`No active pi-task-master run in this repo. Start one with: pitm start "<goal>"`);
 				process.exit(0);
 			}
+			return;
+		}
+		case "log": {
+			const json = rest.includes("--json");
+			printLog(process.cwd(), json);
+			return;
+		}
+		case "config": {
+			runConfigCommand(rest);
 			return;
 		}
 		case "doctor": {

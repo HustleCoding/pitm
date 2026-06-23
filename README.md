@@ -168,8 +168,14 @@ pitm start "<goal>"                Full pipeline: plan → work → PR → CI �
 pitm start "<goal>" --dry-plan     Preview the plan only (no side effects)
 pitm start "<goal>" --force        Overwrite an existing run
 pitm resume                        Continue from saved phase after interruption
+pitm retry                         Retry a run stuck at needs_human from the failed phase
 pitm status                        Show phase, tasks, PR url, token budget
 pitm status --json                 Same as above, structured JSON output
+pitm log                           Show persistent run history (all past runs)
+pitm log --json                    Same as above, structured JSON output
+pitm config                        Print the full resolved config
+pitm config get <key>              Print a single config value (dot-notation)
+pitm config set <key> <value>      Update a single config value
 pitm reset                         Delete .pitm/state.json to start fresh
 pitm doctor                        Check auth, config, models, gh, git
 pitm steer "<message>"             Queue a steering message for the running worker
@@ -254,7 +260,7 @@ At any failing gate the run halts at `needs_human` with an actionable note; `pit
 
 ### Run gets stuck
 
-- **`needs_human`** — read `pitm status` for the note. Fix the blocker, then `pitm resume`.
+- **`needs_human`** — read `pitm status` for the note. Fix the blocker, then `pitm retry` (retries from the failed phase) or `pitm resume`.
 - **Ctrl-C'd mid-run** — state is saved; `pitm resume` continues from the saved phase.
 - **Want to start over** — `pitm reset` (or `rm .pitm/state.json`) and run `pitm start` again.
 - **Wrong goal** — `pitm reset`, delete the stray `pitm/...` branch, start fresh.
