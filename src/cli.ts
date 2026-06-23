@@ -1,6 +1,7 @@
 /**
  * CLI entrypoint. Small hand-rolled subcommand dispatcher (no extra dep).
  *
+ *   pitm init                 interactive config wizard — pick provider + models
  *   pitm start "<goal>"       plan -> work -> PR -> CI -> review -> verify -> (merge)
  *   pitm resume               resume the current run from its saved phase
  *   pitm status               show the current run's phase, tasks, and PR
@@ -10,6 +11,7 @@
  */
 import { planOnly, startRun, resumeRun } from "./orchestrator.ts";
 import { runDoctor } from "./doctor.ts";
+import { runInit } from "./init.ts";
 import { requireState, saveState } from "./state.ts";
 import { isPitmError } from "./errors.ts";
 import { appendSteer, mergeExternalMailbox } from "./mailbox.ts";
@@ -23,6 +25,7 @@ function usage(): never {
 	console.log(`pi-task-master — autonomous task orchestration over the pi SDK
 
 Usage:
+  pitm init                  Interactive setup — pick provider, models, and settings.
   pitm start "<goal>" [--dry-plan] [--planner provider/modelId] [--force]   Plan + full pipeline, or just plan with --dry-plan.
   pitm resume                Resume the current run from its saved phase.
   pitm status                Show the current run's phase, tasks, and PR.
@@ -37,6 +40,10 @@ State lives in .pitm/state.json (one run per repo).`);
 async function main(argv: string[]): Promise<void> {
 	const [cmd, ...rest] = argv;
 	switch (cmd) {
+		case "init": {
+			await runInit();
+			return;
+		}
 		case "start": {
 			const { goal, dryPlan, planner, force } = parseStartArgs(rest);
 			if (!goal) usage();
