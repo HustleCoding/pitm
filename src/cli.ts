@@ -181,7 +181,7 @@ async function main(argv: string[]): Promise<void> {
 		}
 		case "watch": {
 			const port = parsePortFlag(rest);
-			const srv = await startMailboxServer({ port });
+			const srv = await startMailboxServer({ port, cwd });
 			console.log(`pi-task-master mailbox server on http://${"127.0.0.1"}:${srv.port}`);
 			console.log("  POST /steer      {\"text\":\"...\"}");
 			console.log("  POST /followup   {\"text\":\"...\"}");
@@ -196,6 +196,17 @@ async function main(argv: string[]): Promise<void> {
 			return;
 		}
 		case "reset": {
+			try {
+				const s = requireState(cwd);
+				if (isActivePhase(s.phase)) {
+					console.error(
+						`A run is still active (phase: ${s.phase}). Use \`pitm resume\` to continue or pass --force:\n  pitm reset --force`,
+					);
+					if (!rest.includes("--force") && !rest.includes("-f")) {
+						process.exit(1);
+					}
+				}
+			} catch { /* no state — fine */ }
 			const statePath = join(cwd, ".pitm", "state.json");
 			const mailboxPath = join(cwd, ".pitm", "mailbox.json");
 			try { unlinkSync(statePath); } catch { /* */ }
