@@ -6,6 +6,7 @@
  * triaged — glm-5.2 cannot read images (confirmed).
  */
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Skill } from "@earendil-works/pi-coding-agent";
 import { runPhase, type PhaseRunResult } from "../agent.ts";
 import type { PrCheck } from "../git.ts";
 
@@ -30,6 +31,8 @@ export interface FixerInput {
 	logs: Array<{ name: string; log: string }>;
 	verifyCommand: string;
 	model: Model<Api>;
+	/** Rigor skills exposed to the fixer. Empty unless enabled in config. */
+	skills?: Skill[];
 }
 
 export async function runFixer(input: FixerInput): Promise<PhaseRunResult> {
@@ -58,6 +61,7 @@ Investigate, fix, and re-run \`${input.verifyCommand}\` locally. Working directo
 		tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
 		prompt,
 		phaseLabel: "fixing CI",
+		skills: input.skills,
 	});
 }
 

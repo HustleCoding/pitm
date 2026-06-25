@@ -19,6 +19,7 @@ import {
 	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
+	type Skill,
 } from "@earendil-works/pi-coding-agent";
 import { modelLabel } from "./models.ts";
 import { phaseEnd, startSpinner, status, stopSpinner, textStreaming, toolCall, toolEnd } from "./progress.ts";
@@ -45,6 +46,9 @@ export interface PhaseRunOptions {
 	onSession?: (session: AgentSessionLike) => void;
 	/** Human-readable label for the phase, shown in progress output. */
 	phaseLabel?: string;
+	/** Skills to expose to the agent (names + descriptions appended to the
+	 *  system prompt; full SKILL.md read on demand). Empty by default. */
+	skills?: Skill[];
 }
 
 export interface PhaseRunResult {
@@ -57,14 +61,14 @@ export interface PhaseRunResult {
 	touchedPaths: string[];
 }
 
-function makeLoader(systemPrompt: string): ResourceLoader {
+function makeLoader(systemPrompt: string, skills: Skill[]): ResourceLoader {
 	return {
 		getExtensions: () => ({
 			extensions: [],
 			errors: [],
 			runtime: createExtensionRuntime(),
 		}),
-		getSkills: () => ({ skills: [], diagnostics: [] }),
+		getSkills: () => ({ skills, diagnostics: [] }),
 		getPrompts: () => ({ prompts: [], diagnostics: [] }),
 		getThemes: () => ({ themes: [], diagnostics: [] }),
 		getAgentsFiles: () => ({ agentsFiles: [] }),
@@ -83,7 +87,7 @@ export async function runPhase(opts: PhaseRunOptions): Promise<PhaseRunResult> {
 		compaction: { enabled: false },
 		retry: { enabled: true, maxRetries: 2 },
 	});
-	const loader = makeLoader(opts.systemPrompt);
+	const loader = makeLoader(opts.systemPrompt, opts.skills ?? []);
 	await loader.reload();
 
 	const { session } = await createAgentSession({

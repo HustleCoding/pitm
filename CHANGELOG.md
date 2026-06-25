@@ -18,6 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Opt-in skills for the worker/fixer/reviewer phases** — pitm now wires the pi SDK's skill system into the code-writing phases (`agent.ts` `getSkills()`, previously stubbed empty). When `skills.enabled` is set, it loads skills from the bundled `skills/` directory, the target repo's `.pitm/skills/`, and any `skills.paths`. Ships a curated `pitm-rigor` skill plus first-principle leaves (laziness protocol, foundational thinking, minimize reader load, prove it works, fix root causes), adapted from [pstack](https://github.com/cursor/plugins/tree/main/pstack). Off by default; toggle with `pitm config set skills.enabled true`.
 - **`pitm log`** — persistent run history. Every completed or failed run is saved to `.pitm/history.json`. Shows goal, outcome, PR link, token usage, and task counts. Use `--json` for machine-readable output.
 - **`pitm retry`** — retry a run stuck at `needs_human` from the failed phase instead of starting over. Resets failed tasks back to pending and resumes the pipeline.
 - **`pitm config get/set`** — view or edit individual config values without re-running init. Supports dot-notation keys (e.g. `pitm config set models.fixer openrouter/google/gemini-2.5-flash`). `pitm config` with no args prints the full resolved config.

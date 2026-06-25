@@ -30,6 +30,8 @@ import {
 	stageTracked,
 } from "./git.ts";
 import { buildRegistry, modelLabel, resolveAll } from "./models.ts";
+import { loadPitmSkills } from "./skills.ts";
+import type { Skill } from "@earendil-works/pi-coding-agent";
 import { type AgentSessionLike, type PhaseRunResult } from "./agent.ts";
 import { runPlanner, toTasks } from "./phases/planner.ts";
 import { runWorker } from "./phases/worker.ts";
@@ -64,6 +66,8 @@ export interface RunContext {
 	byPhase: Partial<Record<PhaseName, Model<Api>>>;
 	knownReviewComments: Set<string>;
 	lock: HeldLock;
+	/** Rigor skills for the code-writing phases. Empty unless enabled in config. */
+	skills: Skill[];
 }
 
 /** Begin a new run. Throws if a run already exists in this cwd. */
@@ -109,7 +113,8 @@ export async function startRun(opts: StartOptions): Promise<State> {
 		return fail(state, cwd, `Could not create branch ${branch}: ${(e as Error).message}`, lock);
 	}
 
-	const ctx: RunContext = { cwd, config, byPhase, knownReviewComments: new Set(), lock };
+	const skills = loadPitmSkills(cwd, config);
+	const ctx: RunContext = { cwd, config, byPhase, knownReviewComments: new Set(), lock, skills };
 
 	const plannerModel = byPhase.planner;
 	if (!plannerModel) return fail(state, cwd, "No planner model resolved.", lock);
@@ -175,7 +180,8 @@ export async function resumeRun(cwd: string = process.cwd()): Promise<State> {
 	const { registry } = buildRegistry();
 	const byPhase = resolveAll(registry, config.models);
 	const lock = await acquireLock(cwd);
-	const ctx: RunContext = { cwd, config, byPhase, knownReviewComments: new Set(), lock };
+	const skills = loadPitmSkills(cwd, config);
+	const ctx: RunContext = { cwd, config, byPhase, knownReviewComments: new Set(), lock, skills };
 
 	if (state.phase === "planning") {
 		const plan = await runPlanner(cwd, state.goal, byPhase.planner as Model<Api>, config.verifyCommand);
@@ -257,6 +263,7 @@ async function runWorkerWithMailbox(
 			verifyCommand: config.verifyCommand,
 			model: workerModel,
 			previousTasks: state.tasks,
+			skills: ctx.skills,
 			onSession: (session: AgentSessionLike) => {
 				stopPoller = startMailboxPoller(state, session, 2000);
 			},
@@ -314,6 +321,7 @@ async function afterPr(state: State, ctx: RunContext): Promise<void> {
 		state,
 		fixerModel: byPhase.fixer,
 		maxFixRetries: config.budget.maxCiFixRetries,
+		skills: ctx.skills,
 	});
 	if (ciOutcome === "needs_human") {
 		await lock.release();
@@ -326,6 +334,7 @@ async function afterPr(state: State, ctx: RunContext): Promise<void> {
 		state,
 		reviewerModel: byPhase.reviewer,
 		maxRounds: 3,
+		skills: ctx.skills,
 		knownCommentBodies: ctx.knownReviewComments,
 	});
 	if (reviewOutcome === "needs_human") {
@@ -339,6 +348,7 @@ async function afterPr(state: State, ctx: RunContext): Promise<void> {
 			state,
 			fixerModel: byPhase.fixer,
 			maxFixRetries: config.budget.maxCiFixRetries,
+			skills: ctx.skills,
 		});
 		if (reCi === "needs_human") {
 			await lock.release();

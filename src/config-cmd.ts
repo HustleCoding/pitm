@@ -55,6 +55,8 @@ const KNOWN_KEYS = [
 	"git.autoMerge",
 	"budget.maxTokensPerRun",
 	"budget.maxCiFixRetries",
+	"skills.enabled",
+	"skills.includeBundled",
 ];
 
 export function runConfigCommand(args: string[], cwd: string = process.cwd()): void {
