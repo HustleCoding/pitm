@@ -3,6 +3,7 @@
  * session, commit + push, then hand back to CI. Bounded review rounds.
  */
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Skill } from "@earendil-works/pi-coding-agent";
 import { ghPrReviewComments, isClean, pushBranch, stagePaths, stageTracked, type ReviewComment } from "./git.ts";
 import { commit, stageAll } from "./git.ts";
 import { runReviewer } from "./phases/reviewer.ts";
@@ -15,6 +16,8 @@ export interface ReviewLoopOptions {
 	state: State;
 	reviewerModel: Model<Api> | undefined;
 	maxRounds: number;
+	/** Rigor skills exposed to the reviewer. Empty unless enabled in config. */
+	skills?: Skill[];
 	/** Comments seen on prior rounds, to skip re-addressing. */
 	knownCommentBodies?: Set<string>;
 }
@@ -60,6 +63,7 @@ export async function runReviewLoop(opts: ReviewLoopOptions): Promise<ReviewOutc
 				comments: newComments,
 				verifyCommand: state.verifyCommand,
 				model: opts.reviewerModel,
+				skills: opts.skills,
 			});
 		} catch (e) {
 			return needsHuman(state, cwd, `Reviewer session errored: ${(e as Error).message}`);

@@ -3,6 +3,7 @@
  * fixer retry. On success, advance. On exhaustion, route to `needs_human`.
  */
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Skill } from "@earendil-works/pi-coding-agent";
 import {
 	ghCheckLog,
 	ghPrChecks,
@@ -21,6 +22,8 @@ export interface CiLoopOptions {
 	state: State;
 	fixerModel: Model<Api> | undefined;
 	maxFixRetries: number;
+	/** Rigor skills exposed to the fixer. Empty unless enabled in config. */
+	skills?: Skill[];
 	/** Per-poll delay and overall timeout (ms). */
 	pollMs?: number;
 	timeoutMs?: number;
@@ -72,6 +75,7 @@ export async function runCiLoop(opts: CiLoopOptions): Promise<CiOutcome> {
 				logs,
 				verifyCommand: state.verifyCommand,
 				model: opts.fixerModel,
+				skills: opts.skills,
 			});
 		} catch (e) {
 			return needsHuman(state, cwd, `Fixer session errored: ${(e as Error).message}`);

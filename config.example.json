@@ -21,5 +21,12 @@
   "budget": {
     "maxTokensPerRun": 2000000,
     "maxCiFixRetries": 3
+  },
+
+  "skills": {
+    "_comment": "Opt-in pstack-style rigor for the worker/fixer/reviewer phases. See skills/README.md.",
+    "enabled": false,
+    "includeBundled": true,
+    "paths": []
   }
 }

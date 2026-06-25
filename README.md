@@ -246,6 +246,28 @@ At any failing gate the run halts at `needs_human` with an actionable note; `pit
 
 ---
 
+## Skills (rigor, opt-in)
+
+The worker, CI-fixer, and reviewer phases can load [pi agent skills](https://agentskills.io/specification) so the agent applies rigorous engineering discipline — name the data shape first, make the smallest diff that works, prove it works, fix root causes — instead of churning out slop. pitm ships a curated set adapted from [pstack](https://github.com/cursor/plugins/tree/main/pstack) by Lauren Tan (poteto).
+
+Off by default. Enable per repo:
+
+```bash
+pitm config set skills.enabled true
+```
+
+```json
+"skills": { "enabled": true, "includeBundled": true, "paths": [] }
+```
+
+- `enabled` — master switch.
+- `includeBundled` — load pitm's bundled `skills/` (default `true`).
+- `paths` — extra skill directories. A repo's own `.pitm/skills/` is loaded automatically; later dirs win on name collision so you can override a bundled skill.
+
+Only skill **descriptions** go into the system prompt; the agent `read`s the full `SKILL.md` on demand (progressive disclosure), so the prompt stays small. See `skills/README.md` for the bundled set.
+
+---
+
 ## Troubleshooting
 
 ### `pitm doctor` fails

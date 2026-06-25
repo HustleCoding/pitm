@@ -3,6 +3,7 @@
  * addresses them and pushes. The orchestrator re-runs CI afterward.
  */
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Skill } from "@earendil-works/pi-coding-agent";
 import { runPhase, type PhaseRunResult } from "../agent.ts";
 import type { ReviewComment } from "../git.ts";
 
@@ -24,6 +25,8 @@ export interface ReviewerInput {
 	comments: ReviewComment[];
 	verifyCommand: string;
 	model: Model<Api>;
+	/** Rigor skills exposed to the reviewer. Empty unless enabled in config. */
+	skills?: Skill[];
 }
 
 export async function runReviewer(input: ReviewerInput): Promise<PhaseRunResult> {
@@ -52,5 +55,6 @@ Address them, then run \`${input.verifyCommand}\` locally. Working directory: ${
 		tools: ["read", "bash", "edit", "write", "grep", "find", "ls"],
 		prompt,
 		phaseLabel: "addressing review",
+		skills: input.skills,
 	});
 }

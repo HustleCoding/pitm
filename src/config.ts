@@ -25,6 +25,14 @@ export interface PitmConfig {
 		maxTokensPerRun: number;
 		maxCiFixRetries: number;
 	};
+	skills: {
+		/** Master switch. When false, no skills are loaded into any phase. */
+		enabled: boolean;
+		/** Load the skills shipped in pitm's `skills/` directory. */
+		includeBundled: boolean;
+		/** Extra skill directories (absolute, or relative to the target repo). */
+		paths: string[];
+	};
 }
 
 export const DEFAULT_CONFIG: PitmConfig = {
@@ -38,6 +46,7 @@ export const DEFAULT_CONFIG: PitmConfig = {
 	verifyCommand: "bun run verify",
 	git: { targetBranch: "main", autoPush: true, autoMerge: false },
 	budget: { maxTokensPerRun: 2_000_000, maxCiFixRetries: 3 },
+	skills: { enabled: false, includeBundled: true, paths: [] },
 };
 
 /** Load and merge config from `<cwd>/.pitm/config.json`. Missing file = defaults. */
@@ -68,6 +77,7 @@ function mergeConfig(base: PitmConfig, override: Partial<PitmConfig>): PitmConfi
 		verifyCommand: override.verifyCommand ?? base.verifyCommand,
 		git: { ...base.git, ...(override.git ?? {}) },
 		budget: { ...base.budget, ...(override.budget ?? {}) },
+		skills: { ...base.skills, ...(override.skills ?? {}) },
 	};
 }
 

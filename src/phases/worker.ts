@@ -3,6 +3,7 @@
  * project's verify command via bash, and reports. The orchestrator commits.
  */
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Skill } from "@earendil-works/pi-coding-agent";
 import { runPhase, type AgentSessionLike, type PhaseRunResult } from "../agent.ts";
 import type { Task } from "../state.ts";
 
@@ -26,6 +27,8 @@ export interface WorkerInput {
 	previousTasks: Task[];
 	/** Called once with the live AgentSession, for mailbox steering. */
 	onSession?: (session: AgentSessionLike) => void;
+	/** Rigor skills exposed to the worker. Empty unless enabled in config. */
+	skills?: Skill[];
 }
 
 export async function runWorker(input: WorkerInput): Promise<PhaseRunResult> {
@@ -38,6 +41,7 @@ export async function runWorker(input: WorkerInput): Promise<PhaseRunResult> {
 		prompt,
 		onSession: input.onSession,
 		phaseLabel: `worker ${input.task.id}`,
+		skills: input.skills,
 	});
 }
 
